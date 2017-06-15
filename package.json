@@ -1,0 +1,26 @@
+{
+  "name": "workon",
+  "version": "1.0.0-alpha.1",
+  "description": "Work on something great!",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@code.palu.io:israel/workon.git"
+  },
+  "keywords": [
+    "productivity"
+  ],
+  "author": "Israel Roldan (me@isro.me)",
+  "license": "MIT",
+  "devDependencies": {
+    "cz-conventional-changelog": "^2.0.0"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  }
+}
