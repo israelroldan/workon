@@ -1,10 +1,10 @@
 {
   "name": "workon",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.0",
   "description": "Work on something great!",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "release": "standard-version"
   },
   "repository": {
     "type": "git",
@@ -16,11 +16,25 @@
   "author": "Israel Roldan (me@isro.me)",
   "license": "MIT",
   "devDependencies": {
-    "cz-conventional-changelog": "^2.0.0"
+    "cz-conventional-changelog": "^2.0.0",
+    "standard-version": "^4.2.0"
   },
   "config": {
     "commitizen": {
       "path": "./node_modules/cz-conventional-changelog"
     }
-  }
+  },
+  "dependencies": {
+    "conf": "^1.1.2",
+    "deep-assign": "^2.0.0",
+    "flat": "^2.0.1",
+    "inquirer": "^3.1.1",
+    "loog": "^1.4.0",
+    "omelette": "^0.4.4",
+    "openurl2": "^1.0.1",
+    "phylo": "^1.0.0-beta.7",
+    "simple-git": "^1.73.0",
+    "switchit": "^1.0.7"
+  },
+  "bin": "bin/workon"
 }
