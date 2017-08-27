@@ -8,7 +8,7 @@ class init extends command {
     execute (params) {
         let me = this;
         me.log.debug();
-        me.log.log(me.root().logo());
+        me.log.log(me.root().logo);
         me.log.log();
         let name;
         let fromUser = false;

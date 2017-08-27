@@ -16,8 +16,13 @@ class workon extends container {
         me.log = log || require('loog')({
             prefixStyle: 'ascii'
         });
+    }
+
+    run (...args) {
+        let me = this;
         me.initialize();
         me.prepareCompletion();
+        return super.run(args);
     }
 
     initialize () {
@@ -53,13 +58,8 @@ class workon extends container {
         if (params.debug) {
             me.log.setLogLevel('debug');
         }
-        if (params.version) {
-            me.log.info(`workon v${me.config.get('pkg').version}`);
-            return true;
-        } else if (params.help) {
-            me.log.info('Show help');
-            return true;
-        } else if (params.setup) {
+        
+        if (params.setup) {
             me.log.debug('Configuring command-line completion');
             me.completion.setupShellInitFile();
             return true;
@@ -88,7 +88,7 @@ class workon extends container {
         }
     }
 
-    logo () {
+    get logo () {
         let version = this.config.get('pkg').version;
         return `                      8\u001b[2m${' '.repeat(Math.max(15-version.length-1, 1))+'v'+version}\u001b[22m\nYb  db  dP .d8b. 8d8b 8.dP \u001b[92m.d8b. 8d8b.\u001b[0m\n YbdPYbdP  8' .8 8P   88b  \u001b[92m8' .8 8P Y8\u001b[0m\n  YP  YP   \`Y8P' 8    8 Yb \u001b[92m\`Y8P' 8   8\u001b[0m`;
     }
@@ -98,11 +98,9 @@ workon.define({
     help: {
         '': 'Work on something great!',
         debug: 'Provide debug logging output',
-        help: 'Show help',
-        version: 'Show version',
         'setup-completion': 'Configure command line tab completion (see help for details)'
     },
-    switches: '[debug:boolean=false] [version:boolean=false] [help:boolean=false] [setup-completion:boolean=false]',
+    switches: '[debug:boolean=false] [setup-completion:boolean=false]',
     commands: {
         '': 'open',
         interactive,
