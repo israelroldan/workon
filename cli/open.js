@@ -5,22 +5,17 @@ const spawn = require('child_process').spawn;
 const File = require('phylo');
 
 class open extends command {
-    execute (params, args) {
+    execute (params) {
         let me = this;
-        let defaults = me.config.get('project_defaults');
-        let baseDir = File.from(defaults.base);
-        let projects = me.config.get('projects');
-        let cwp = null;
-        switch (params.identifier) {
-            case undefined:
-                me.log.debug(`No project name provided, starting interactive mode`);
-                return me.startInteractiveMode();
-            default:
-                return me.processProjectIdentifier(params.identifier);
+        if (params.project) {
+            return me.processProject(params.project);
+        } else {
+            me.log.debug(`No project name provided, starting interactive mode`);
+            return me.startInteractiveMode();
         }
     }
 
-    processProjectIdentifier (identifier) {
+    processProject (project) {
         let me = this;
         let environment = me.root().environment;
 
@@ -28,27 +23,27 @@ class open extends command {
         if (!projects) {
             me.config.set('projects', {});
         } else {
-            if (environment.$isProjectEnvironment && (identifier === 'this' || identifier === '.')) {
+            if (environment.$isProjectEnvironment && (project === 'this' || project === '.')) {
                 me.log.info(`Open current: ${environment.project.name}`);
             } else {
-                if (identifier in projects) {   
-                    let cfg = projects[identifier];
-                    cfg.name = identifier;
+                if (project in projects) {
+                    let cfg = projects[project];
+                    cfg.name = project;
                     me.switchTo(ProjectEnvironment.load(cfg, me.config.get('project_defaults')));
                 } else {
-                    me.log.debug(`Project '${identifier}' not found, starting interactive mode`);
-                    return me.startInteractiveMode(identifier);
+                    me.log.debug(`Project '${project}' not found, starting interactive mode`);
+                    return me.startInteractiveMode(project);
                 }
             }
         }
     }
 
-    startInteractiveMode (identifier) {
+    startInteractiveMode (project) {
         let me = this;
         let root = me.root();
         
         let interactiveCmd = root.commands.lookup('interactive').create(root);
-        return interactiveCmd.dispatch(new me.args.constructor([identifier]))
+        return interactiveCmd.dispatch(new me.args.constructor([project]))
     }
 
     switchTo (environment) {
@@ -80,21 +75,23 @@ class open extends command {
         if (event in scripts) {
             me.log.debug(`Found script with event name, unfortunately scripts are not yet supported.`);
         }
-        switch (event) {
-            case 'ide':
-                spawn(project.ide, [project.path.path]);
-            break;
-            case 'cwd':
-                spawn(process.env.SHELL, ['-i'], {
-                    cwd: environment.project.path.path,
-                    stdio: 'inherit'
-                });
-            break;
-            case 'web':
-                if (homepage) {
-                    require("openurl2").open(homepage);
-                }
-            break;
+        if (!me.params['dry-run']) {
+            switch (event) {
+                case 'ide':
+                    spawn(project.ide, [project.path.path]);
+                break;
+                case 'cwd':
+                    spawn(process.env.SHELL, ['-i'], {
+                        cwd: environment.project.path.path,
+                        stdio: 'inherit'
+                    });
+                break;
+                case 'web':
+                    if (homepage) {
+                        require("openurl2").open(homepage);
+                    }
+                break;
+            }
         }
         if (`before${capitalEvt}` in scripts) {
             me.log.debug(`Found 'after' script, unfortunately scripts are not yet supported.`);
@@ -103,8 +100,12 @@ class open extends command {
 }
 
 open.define({
-    switches: '[debug:boolean=false]',
-    parameters: '[identifier:string]'
+    help: {
+        '': 'open a project by passing its project id',
+        project: 'The id of the project to open'
+    },
+    switches: '[d#debug:boolean=false] [n#dry-run:boolean=false]',
+    parameters: '[p#project:string]'
 });
 
 module.exports = open;

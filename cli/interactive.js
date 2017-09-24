@@ -4,21 +4,21 @@ const File = require('phylo');
 const Prompt = require('inquirer/lib/prompts/input');
 const deepAssign = require('deep-assign');
 
-class init extends command {
+class interactive extends command {
     execute (params) {
         let me = this;
         me.log.debug();
-        me.log.log(me.root().logo);
+        me.showLogo();
         me.log.log();
         let name;
         let fromUser = false;
         if (!params.identifier || params.identifier === 'undefined') {
-            me.log.debug('Name was not provided, autodetecting');
+            me.log.debug('Name was not provided, auto-detecting');
             if (me.root().project) {
                 me.log.debug('Name derived form current project');
                 name = me.root().project;
             } else {
-                me.log.debug('Name derived from current working directory')
+                me.log.debug('Name derived from current working directory');
                 name = File.cwd().name;
             }
         } else {
@@ -26,6 +26,16 @@ class init extends command {
             fromUser = true;
         }
         return me.startInteractive(name, fromUser);
+    }
+
+    showLogo () {
+        let me = this;
+        let version = me.config.get('pkg').version;
+
+        if (!this._hasShownLogo) {
+            this.log.log(`                      8\u001b[2m${' '.repeat(Math.max(15-version.length-1, 1))+'v'+version}\u001b[22m\nYb  db  dP .d8b. 8d8b 8.dP \u001b[92m.d8b. 8d8b.\u001b[0m\n YbdPYbdP  8' .8 8P   88b  \u001b[92m8' .8 8P Y8\u001b[0m\n  YP  YP   \`Y8P' 8    8 Yb \u001b[92m\`Y8P' 8   8\u001b[0m`);
+            this._hasShownLogo = true;
+        }
     }
 
     startInteractive (defaultName, fromUser, showMain = false) {
@@ -268,7 +278,7 @@ class init extends command {
     }
 }
 
-init.define({
+interactive.define({
     parameters: {
         identifier: {
             type: 'string',
@@ -277,4 +287,4 @@ init.define({
     }
 });
 
-module.exports = init;
+module.exports = interactive;

@@ -7,6 +7,7 @@ const unset = require('./unset');
 class config extends container {}
 
 config.define({
+    help: 'manage configuration parameters',
     commands: {
         '': 'list',
         list,

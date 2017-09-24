@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-const isDebug = /-{1,2}de?b?u?g?\b/.test(process.argv[2]);
-const log = require('loog')({
+const isDebug = !!process.argv.find(param => /-{1,2}de?b?u?g?\b/.test(param));
+const console = require('loog')({
     prefixStyle: 'ascii',
     logLevel: isDebug ? 'debug' : 'info'
 });
 
 const workon = require('../cli');
-new workon(log).run().catch(e => { 
-    log.error(isDebug ? e.stack : (e.message ? e.message : e));
+new workon(console).run().catch(e => {
+    console.error(isDebug ? e.stack : (e.message ? e.message : e));
     process.exit(1);
 });

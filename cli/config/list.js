@@ -19,6 +19,8 @@ class list extends command {
     }
 }
 
-list.define({});
+list.define({
+    help: 'List configuration parameters'
+});
 
 module.exports = list;

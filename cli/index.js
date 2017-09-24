@@ -1,8 +1,8 @@
-const File = require('phylo');
 const {container} = require('./base');
-const Config = require('../lib/config')
-const omelette = require('omelette');
 
+const File = require('phylo');
+
+const Config = require('../lib/config');
 const {EnvironmentRecognizer} = require('../lib/environment');
 
 const config = require('./config');
@@ -18,11 +18,11 @@ class workon extends container {
         });
     }
 
-    run (...args) {
+    run () {
         let me = this;
         me.initialize();
         me.prepareCompletion();
-        return super.run(args);
+        return super.run();
     }
 
     initialize () {
@@ -44,53 +44,47 @@ class workon extends container {
                 'list', 'set', 'reset'
             ]
         };
-        let projects = Object.keys(me.config.get('projects')).forEach((id) => {
+        Object.keys(me.config.get('projects')).forEach((id) => {
             tree[id] = null;
-        })
-        me.completion = omelette('workon').tree(tree);
+        });
+        me.completion = require('omelette')('workon').tree(tree);
         me.completion.init();
     }
 
     execute (params, args) {
         let me = this;
-        me.log.debug('');
-        
+
         if (params.debug) {
             me.log.setLogLevel('debug');
         }
-        
-        if (params.setup) {
+
+        if (params['setup-completion']) {
             me.log.debug('Configuring command-line completion');
             me.completion.setupShellInitFile();
             return true;
         } else {
+            let prom = Promise.resolve();
             if (!me.environment) {
-                return EnvironmentRecognizer.recognize(File.cwd())
+                prom = EnvironmentRecognizer.recognize(File.cwd())
                     .then((environment) => {
                         me.environment = environment;
-                        return super.execute(params, args).catch((err) => {
-                            if (args._args.length == 0) {
-                                let interactiveCmd = me.commands.lookup('interactive').create(me);
-                                return interactiveCmd.run([])
-                            } else {
-                                let cmdNames = me.constructor.getAspects().commands.filter((c)=>!!c).map((c)=>c.name);
-                                let firstCmd = args._args.filter((a)=>!/^-/.test(a))[0];
-                                if (!~cmdNames.indexOf(firstCmd)) {
-                                    let openCmd = me.commands.lookup('open').create(me);
-                                    return openCmd.run(args._args);
-                                } else {
-                                    throw err;
-                                }
-                            }
-                        });
                     });
             }
+            return prom.then(() => super.execute(params, args).catch((err) => me.maybeOpen(err, args)));
         }
     }
 
-    get logo () {
-        let version = this.config.get('pkg').version;
-        return `                      8\u001b[2m${' '.repeat(Math.max(15-version.length-1, 1))+'v'+version}\u001b[22m\nYb  db  dP .d8b. 8d8b 8.dP \u001b[92m.d8b. 8d8b.\u001b[0m\n YbdPYbdP  8' .8 8P   88b  \u001b[92m8' .8 8P Y8\u001b[0m\n  YP  YP   \`Y8P' 8    8 Yb \u001b[92m\`Y8P' 8   8\u001b[0m`;
+    maybeOpen (err, args) {
+        let me = this;
+        let cmdNames = me.constructor.getAspects().commands.filter((c) => !!c).map((c) => c.name);
+        let firstCmd = args._args.filter((a) => !/^-/.test(a))[0];
+        if (!~cmdNames.indexOf(firstCmd)) {
+            // ex. "workon projectName"
+            return me.commands.lookup('open').create(me).run(args._args);
+        } else {
+            // ex. "workon config asdf"
+            throw err;
+        }
     }
 }
 
@@ -100,10 +94,13 @@ workon.define({
         debug: 'Provide debug logging output',
         'setup-completion': 'Configure command line tab completion (see help for details)'
     },
-    switches: '[debug:boolean=false] [setup-completion:boolean=false]',
+    switches: '[d#debug:boolean=false] [setup-completion:boolean=false]',
     commands: {
         '': 'open',
-        interactive,
+        interactive: {
+            type: interactive,
+            private: true
+        },
         open,
         config
     }
