@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+<a name="1.2.1"></a>
+## [1.2.1](https://github.com/israelroldan/workon/compare/v1.2.0...v1.2.1) (2025-08-06)
+
+
+### Bug Fixes
+
+* Adjust 'claude' command execution in shell mode ([c1bc5dc](https://github.com/israelroldan/workon/commit/c1bc5dc))
+
+
+
 <a name="1.2.0"></a>
 # [1.2.0](https://github.com/israelroldan/workon/compare/v1.1.0...v1.2.0) (2025-08-06)
 
