@@ -126,10 +126,24 @@ class open extends command {
                     }
                 break;
                 case 'claude':
+                    let claudeArgs = [];
+                    let claudeConfig = project.events.claude;
+                    
+                    // Handle advanced Claude configuration
+                    if (claudeConfig && typeof claudeConfig === 'object') {
+                        if (claudeConfig.flags && Array.isArray(claudeConfig.flags)) {
+                            claudeArgs = claudeArgs.concat(claudeConfig.flags);
+                        }
+                        // Additional config options can be handled here in the future
+                    }
+                    
                     if (isShellMode) {
-                        me.shellCommands.push(`claude`);
+                        let claudeCommand = claudeArgs.length > 0 
+                            ? `claude ${claudeArgs.join(' ')}`
+                            : 'claude';
+                        me.shellCommands.push(claudeCommand);
                     } else {
-                        spawn('claude', [], {
+                        spawn('claude', claudeArgs, {
                             cwd: environment.project.path.path,
                             stdio: 'inherit'
                         });

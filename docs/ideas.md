@@ -34,13 +34,24 @@ Create an interactive mode for editing project configurations through guided pro
 
 ## Enhanced Events
 
-### Advanced claude Event Options
-Extend the claude event with more configuration options:
+### Advanced claude Event Options ✅ IMPLEMENTED
+The claude event now supports advanced configuration options:
 ```json
 "claude": {
-  "mode": "interactive",
+  "flags": ["--resume", "--debug"]
+}
+```
+
+**Available through:** `workon manage` → Configure advanced Claude options
+
+### Future claude Event Enhancements
+Additional options that could be implemented:
+```json
+"claude": {
   "flags": ["--resume"],
-  "project_context": true
+  "mode": "interactive",
+  "project_context": true,
+  "working_directory": "src/"
 }
 ```
 

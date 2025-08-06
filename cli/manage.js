@@ -134,11 +134,17 @@ class manage extends command {
 
         const answers = await inquirer.prompt(questions);
 
-        // Convert events array to object
+        // Convert events array to object and configure advanced options
         const events = {};
-        answers.events.forEach(event => {
-            events[event] = 'true';
-        });
+        for (const event of answers.events) {
+            if (event === 'claude') {
+                // Ask for Claude-specific configuration
+                const claudeConfig = await me.configureClaudeEvent();
+                events[event] = claudeConfig;
+            } else {
+                events[event] = 'true';
+            }
+        }
 
         const projectConfig = {
             path: answers.path,
@@ -248,11 +254,32 @@ class manage extends command {
 
         const answers = await inquirer.prompt(questions);
 
-        // Convert events array to object
+        // Convert events array to object and configure advanced options
         const events = {};
-        answers.events.forEach(event => {
-            events[event] = 'true';
-        });
+        for (const event of answers.events) {
+            if (event === 'claude') {
+                // If claude was previously configured with advanced options, preserve or update them
+                const existingClaudeConfig = project.events && project.events.claude;
+                if (existingClaudeConfig && typeof existingClaudeConfig === 'object') {
+                    const keepConfig = await inquirer.prompt([{
+                        type: 'confirm',
+                        name: 'keep',
+                        message: 'Keep existing Claude configuration?',
+                        default: true
+                    }]);
+                    
+                    if (keepConfig.keep) {
+                        events[event] = existingClaudeConfig;
+                    } else {
+                        events[event] = await me.configureClaudeEvent();
+                    }
+                } else {
+                    events[event] = await me.configureClaudeEvent();
+                }
+            } else {
+                events[event] = 'true';
+            }
+        }
 
         const updatedProject = {
             path: answers.path,
@@ -370,6 +397,49 @@ class manage extends command {
         if (continuePrompt.continue) {
             return me.startManagement();
         }
+    }
+
+    async configureClaudeEvent() {
+        let me = this;
+        
+        me.log.log('\n⚙️  Configure Claude Event\n');
+        
+        const claudeQuestions = [
+            {
+                type: 'confirm',
+                name: 'useAdvanced',
+                message: 'Configure advanced Claude options?',
+                default: false
+            }
+        ];
+
+        const claudeAnswer = await inquirer.prompt(claudeQuestions);
+        
+        if (!claudeAnswer.useAdvanced) {
+            return 'true';
+        }
+
+        const advancedQuestions = [
+            {
+                type: 'input',
+                name: 'flags',
+                message: 'Claude flags (comma-separated, e.g. --resume,--debug):',
+                filter: (input) => {
+                    if (!input.trim()) return [];
+                    return input.split(',').map(flag => flag.trim()).filter(flag => flag);
+                }
+            }
+        ];
+
+        const advancedAnswers = await inquirer.prompt(advancedQuestions);
+        
+        const config = {};
+
+        if (advancedAnswers.flags && advancedAnswers.flags.length > 0) {
+            config.flags = advancedAnswers.flags;
+        }
+
+        return config;
     }
 }
 
