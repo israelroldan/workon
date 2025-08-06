@@ -1,0 +1,11 @@
+{
+  "autorun": true,
+  "artificialDelay": 1000,
+  "terminals": [
+    {
+      "name": "Persistent",
+      "focus": true,
+      "command": "cc"
+    }
+  ]
+}

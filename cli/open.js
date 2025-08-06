@@ -125,6 +125,16 @@ class open extends command {
                         }
                     }
                 break;
+                case 'claude':
+                    if (isShellMode) {
+                        me.shellCommands.push(`claude &`);
+                    } else {
+                        spawn('claude', [], {
+                            cwd: environment.project.path.path,
+                            stdio: 'inherit'
+                        });
+                    }
+                break;
             }
         }
         if (`before${capitalEvt}` in scripts) {

@@ -87,11 +87,6 @@ class workon extends container {
         let shellFunction = `
 # workon shell integration
 workon() {
-    if [[ "$1" == "--init" ]]; then
-        command workon "$@"
-        return $?
-    fi
-    
     local output
     output=$(command workon --shell "$@" 2>&1)
     local exit_code=$?
