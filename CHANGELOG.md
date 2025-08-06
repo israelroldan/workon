@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+<a name="1.2.0"></a>
+# [1.2.0](https://github.com/israelroldan/workon/compare/v1.1.0...v1.2.0) (2025-08-06)
+
+
+### Features
+
+* Introduce interactive project management feature ([3157e27](https://github.com/israelroldan/workon/commit/3157e27))
+
+
+
 <a name="1.1.0"></a>
 # [1.1.0](https://github.com/israelroldan/workon/compare/v1.0.0...v1.1.0) (2025-08-06)
 
