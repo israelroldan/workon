@@ -83,10 +83,40 @@ class workon extends container {
 
     outputShellInit () {
         let me = this;
+        
+        // Get list of available commands from switchit
+        let cmdNames = me.constructor.getAspects().commands.filter((c) => !!c).map((c) => c.name);
+        
+        // Get list of available switches from switchit
+        let switches = me.constructor.getAspects().switches || [];
+        let switchFlags = [];
+        switches.forEach(sw => {
+            switchFlags.push('--' + sw.name);
+            if (sw.char) {
+                switchFlags.push('-' + sw.char);
+            }
+        });
+        
+        // Add built-in switchit flags (help and version are automatically added by switchit)
+        let builtinFlags = ['--help', '-h', '--version', '-v', 'help'];
+        
+        // Combine all non-shell commands and flags, removing duplicates
+        let nonShellCommands = [...new Set(cmdNames.concat(switchFlags).concat(builtinFlags))];
+        let casePattern = nonShellCommands.join('|');
+        
         // Generate shell function that wraps workon calls
         let shellFunction = `
 # workon shell integration
 workon() {
+    # Commands that should NOT use shell mode
+    case "$1" in
+        ${casePattern})
+            command workon "$@"
+            return $?
+            ;;
+    esac
+    
+    # Default behavior: use shell mode for project opening
     local output
     output=$(command workon --shell "$@" 2>&1)
     local exit_code=$?
