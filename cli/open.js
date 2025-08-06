@@ -57,7 +57,18 @@ class open extends command {
         me.log.debug(`IDE command is: ${project.ide}`);
         me.log.debug(`Actions are: ${events}`);
 
+        // Initialize shell commands collector if in shell mode
+        let isShellMode = me.params.shell || me.root().params.shell;
+        if (isShellMode) {
+            me.shellCommands = [];
+        }
+
         events.forEach(me.processEvent.bind(me));
+
+        // Output collected shell commands if in shell mode
+        if (isShellMode && me.shellCommands.length > 0) {
+            console.log(me.shellCommands.join('\n'));
+        }
     }
 
     processEvent (event) {
@@ -76,19 +87,42 @@ class open extends command {
             me.log.debug(`Found script with event name, unfortunately scripts are not yet supported.`);
         }
         if (!me.params['dry-run']) {
+            // Check if we're in shell mode
+            let isShellMode = me.params.shell || me.root().params.shell;
+            me.log.debug(`Shell mode is: ${isShellMode}`);
+            
             switch (event) {
                 case 'ide':
-                    spawn(project.ide, [project.path.path]);
+                    if (isShellMode) {
+                        me.shellCommands.push(`${project.ide} "${project.path.path}" &`);
+                    } else {
+                        spawn(project.ide, [project.path.path]);
+                    }
                 break;
                 case 'cwd':
-                    spawn(process.env.SHELL, ['-i'], {
-                        cwd: environment.project.path.path,
-                        stdio: 'inherit'
-                    });
+                    if (isShellMode) {
+                        me.shellCommands.push(`cd "${environment.project.path.path}"`);
+                    } else {
+                        spawn(process.env.SHELL, ['-i'], {
+                            cwd: environment.project.path.path,
+                            stdio: 'inherit'
+                        });
+                    }
                 break;
                 case 'web':
                     if (homepage) {
-                        require("openurl2").open(homepage);
+                        if (isShellMode) {
+                            // Different approaches based on OS
+                            let openCmd;
+                            switch (process.platform) {
+                                case 'darwin': openCmd = 'open'; break;
+                                case 'win32': openCmd = 'start'; break;
+                                default: openCmd = 'xdg-open'; break;
+                            }
+                            me.shellCommands.push(`${openCmd} "${homepage}" &`);
+                        } else {
+                            require("openurl2").open(homepage);
+                        }
                     }
                 break;
             }
@@ -102,9 +136,10 @@ class open extends command {
 open.define({
     help: {
         '': 'open a project by passing its project id',
-        project: 'The id of the project to open'
+        project: 'The id of the project to open',
+        shell: 'Output shell commands instead of spawning processes'
     },
-    switches: '[d#debug:boolean=false] [n#dry-run:boolean=false]',
+    switches: '[d#debug:boolean=false] [n#dry-run:boolean=false] [shell:boolean=false]',
     parameters: '[p#project:string]'
 });
 

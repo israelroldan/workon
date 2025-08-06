@@ -44,9 +44,12 @@ class workon extends container {
                 'list', 'set', 'reset'
             ]
         };
-        Object.keys(me.config.get('projects')).forEach((id) => {
-            tree[id] = null;
-        });
+        let projects = me.config.get('projects');
+        if (projects) {
+            Object.keys(projects).forEach((id) => {
+                tree[id] = null;
+            });
+        }
         me.completion = require('omelette')('workon').tree(tree);
         me.completion.init();
     }
@@ -62,6 +65,10 @@ class workon extends container {
             me.log.debug('Configuring command-line completion');
             me.completion.setupShellInitFile();
             return true;
+        } else if (params.init) {
+            me.log.debug('Generating shell integration function');
+            me.outputShellInit();
+            return true;
         } else {
             let prom = Promise.resolve();
             if (!me.environment) {
@@ -74,13 +81,46 @@ class workon extends container {
         }
     }
 
+    outputShellInit () {
+        let me = this;
+        // Generate shell function that wraps workon calls
+        let shellFunction = `
+# workon shell integration
+workon() {
+    if [[ "$1" == "--init" ]]; then
+        command workon "$@"
+        return $?
+    fi
+    
+    local output
+    output=$(command workon --shell "$@" 2>&1)
+    local exit_code=$?
+    
+    if [[ $exit_code -eq 0 && -n "$output" ]]; then
+        # Execute shell commands if workon succeeded and output exists
+        eval "$output"
+    else
+        # Show any error output
+        [[ -n "$output" ]] && echo "$output" >&2
+        return $exit_code
+    fi
+}`;
+        console.log(shellFunction);
+    }
+
     maybeOpen (err, args) {
         let me = this;
         let cmdNames = me.constructor.getAspects().commands.filter((c) => !!c).map((c) => c.name);
         let firstCmd = args._args.filter((a) => !/^-/.test(a))[0];
         if (!~cmdNames.indexOf(firstCmd)) {
             // ex. "workon projectName"
-            return me.commands.lookup('open').create(me).run(args._args);
+            let openCmd = me.commands.lookup('open').create(me);
+            // Copy shell parameter to the open command
+            if (me.params.shell) {
+                openCmd.params = openCmd.params || {};
+                openCmd.params.shell = true;
+            }
+            return openCmd.run(args._args);
         } else {
             // ex. "workon config asdf"
             throw err;
@@ -92,9 +132,11 @@ workon.define({
     help: {
         '': 'Work on something great!',
         debug: 'Provide debug logging output',
-        'setup-completion': 'Configure command line tab completion (see help for details)'
+        'setup-completion': 'Configure command line tab completion (see help for details)',
+        shell: 'Output shell commands instead of spawning processes',
+        init: 'Generate shell integration function for seamless directory switching'
     },
-    switches: '[d#debug:boolean=false] [setup-completion:boolean=false]',
+    switches: '[d#debug:boolean=false] [setup-completion:boolean=false] [shell:boolean=false] [init:boolean=false]',
     commands: {
         '': 'open',
         interactive: {
