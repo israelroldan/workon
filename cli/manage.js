@@ -428,6 +428,12 @@ class manage extends command {
                     if (!input.trim()) return [];
                     return input.split(',').map(flag => flag.trim()).filter(flag => flag);
                 }
+            },
+            {
+                type: 'confirm',
+                name: 'split_terminal',
+                message: 'Enable split terminal (Claude + shell side-by-side with tmux)?',
+                default: false
             }
         ];
 
@@ -437,6 +443,10 @@ class manage extends command {
 
         if (advancedAnswers.flags && advancedAnswers.flags.length > 0) {
             config.flags = advancedAnswers.flags;
+        }
+
+        if (advancedAnswers.split_terminal) {
+            config.split_terminal = true;
         }
 
         return config;

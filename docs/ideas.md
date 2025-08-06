@@ -44,14 +44,41 @@ The claude event now supports advanced configuration options:
 
 **Available through:** `workon manage` → Configure advanced Claude options
 
+### Split Terminal with Claude + CWD
+When both `claude` and `cwd` events are enabled, automatically create a split terminal layout:
+- **Left pane**: Claude Code running in project directory
+- **Right pane**: Shell terminal in project directory  
+
+**Implementation approach:**
+- Use tmux to create split session
+- Detect when both events are present
+- Create session: `tmux new-session -d -s "workon-{project}"`
+- Split horizontally: `tmux split-window -h`
+- Run claude in left pane, shell in right pane
+- Attach to session
+
+**Configuration:**
+```json
+"claude": {
+  "flags": ["--resume"],
+  "split_terminal": true
+}
+```
+
+**Benefits:**
+- Claude and terminal side-by-side for optimal workflow
+- Easy switching between AI assistance and command execution
+- Persistent session that can be reattached
+
 ### Future claude Event Enhancements
 Additional options that could be implemented:
 ```json
 "claude": {
   "flags": ["--resume"],
-  "mode": "interactive",
+  "mode": "interactive", 
   "project_context": true,
-  "working_directory": "src/"
+  "working_directory": "src/",
+  "tmux_layout": "even-horizontal"
 }
 ```
 
