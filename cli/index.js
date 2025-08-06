@@ -8,6 +8,7 @@ const {EnvironmentRecognizer} = require('../lib/environment');
 const config = require('./config');
 const interactive = require('./interactive');
 const open = require('./open');
+const manage = require('./manage');
 
 class workon extends container {
     constructor (log) {
@@ -108,13 +109,19 @@ class workon extends container {
         let shellFunction = `
 # workon shell integration
 workon() {
-    # Commands that should NOT use shell mode
+    # Commands and flags that should NOT use shell mode
     case "$1" in
         ${casePattern})
             command workon "$@"
             return $?
             ;;
     esac
+    
+    # If no arguments provided, run interactive mode directly
+    if [[ $# -eq 0 ]]; then
+        command workon "$@"
+        return $?
+    fi
     
     # Default behavior: use shell mode for project opening
     local output
@@ -169,7 +176,8 @@ workon.define({
             private: true
         },
         open,
-        config
+        config,
+        manage
     }
 });
 

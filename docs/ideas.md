@@ -2,38 +2,47 @@
 
 This document contains ideas for future enhancements to the workon project.
 
-## New Events
+## Interactive Project Management
 
-### claude Event
-Launch Claude Code in the project directory after setting the working directory.
+### Project Configuration Editor
+Create an interactive mode for editing project configurations through guided prompts instead of manual file editing.
 
-**Usage:**
-```json
-{
-  "name": "myproject",
-  "path": "projects/myproject",
-  "events": {
-    "cwd": true,
-    "claude": true
-  }
-}
-```
+**Features:**
+- Interactive project creation wizard with step-by-step guidance
+- Edit existing project properties (name, path, IDE, events) through prompts
+- Validate project paths and IDE commands during configuration
+- Preview configuration changes before saving
+- Bulk operations for managing multiple projects
 
 **Implementation considerations:**
-- Should run after `cwd` event to ensure proper directory context
-- Need to detect if Claude Code CLI is available (`claude` command)
-- Could support different Claude modes/flags as event options:
-  ```json
-  "claude": {
-    "mode": "interactive",
-    "flags": ["--resume"]
-  }
-  ```
+- Extend existing inquirer-based interactive system
+- Add new command like `workon config` or `workon manage --interactive`
+- Provide different flows for:
+  - Creating new projects
+  - Editing existing projects
+  - Bulk project management
+- Include validation for:
+  - Directory paths existence
+  - IDE command availability
+  - Event configuration correctness
 
 **Benefits:**
-- Seamless integration with modern AI-assisted development workflow
-- Automatic context switching to project directory in Claude
-- Consistent development environment setup
+- Lower barrier to entry for new users
+- Reduced configuration errors through validation
+- More discoverable project management features
+- Better UX compared to manual JSON editing
+
+## Enhanced Events
+
+### Advanced claude Event Options
+Extend the claude event with more configuration options:
+```json
+"claude": {
+  "mode": "interactive",
+  "flags": ["--resume"],
+  "project_context": true
+}
+```
 
 ## Future Ideas
 

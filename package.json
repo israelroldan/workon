@@ -37,6 +37,7 @@
     "switchit": "^1.0.7"
   },
   "bin": {
-    "workon": "bin/workon"
+    "workon": "bin/workon",
+    "wo": "bin/workon"
   }
 }
