@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@github.com:israelroldan/workon.git"
+    "url": "git+ssh://git@github.com/israelroldan/workon.git"
   },
   "keywords": [
     "productivity"
@@ -36,5 +36,7 @@
     "simple-git": "^1.73.0",
     "switchit": "^1.0.7"
   },
-  "bin": "bin/workon"
+  "bin": {
+    "workon": "bin/workon"
+  }
 }
