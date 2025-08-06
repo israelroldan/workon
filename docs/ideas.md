@@ -2,86 +2,92 @@
 
 This document contains ideas for future enhancements to the workon project.
 
-## Interactive Project Management
+## NPM Command Integration
 
-### Project Configuration Editor
-Create an interactive mode for editing project configurations through guided prompts instead of manual file editing.
-
-**Features:**
-- Interactive project creation wizard with step-by-step guidance
-- Edit existing project properties (name, path, IDE, events) through prompts
-- Validate project paths and IDE commands during configuration
-- Preview configuration changes before saving
-- Bulk operations for managing multiple projects
-
-**Implementation considerations:**
-- Extend existing inquirer-based interactive system
-- Add new command like `workon config` or `workon manage --interactive`
-- Provide different flows for:
-  - Creating new projects
-  - Editing existing projects
-  - Bulk project management
-- Include validation for:
-  - Directory paths existence
-  - IDE command availability
-  - Event configuration correctness
-
-**Benefits:**
-- Lower barrier to entry for new users
-- Reduced configuration errors through validation
-- More discoverable project management features
-- Better UX compared to manual JSON editing
-
-## Enhanced Events
-
-### Advanced claude Event Options ✅ IMPLEMENTED
-The claude event now supports advanced configuration options:
-```json
-"claude": {
-  "flags": ["--resume", "--debug"]
-}
-```
-
-**Available through:** `workon manage` → Configure advanced Claude options
-
-### Split Terminal with Claude + CWD
-When both `claude` and `cwd` events are enabled, automatically create a split terminal layout:
-- **Left pane**: Claude Code running in project directory
-- **Right pane**: Shell terminal in project directory  
+### Three-Pane Development Layout
+When `cwd`, `claude`, and `npm` events are enabled, create a three-pane tmux layout:
+- **Left pane**: Claude Code running in project directory (full height)
+- **Top-right pane**: Shell terminal in project directory  
+- **Bottom-right pane**: NPM command running (e.g., `npm run dev`, `npm test`)
 
 **Implementation approach:**
-- Use tmux to create split session
-- Detect when both events are present
-- Create session: `tmux new-session -d -s "workon-{project}"`
-- Split horizontally: `tmux split-window -h`
-- Run claude in left pane, shell in right pane
-- Attach to session
+- Extend current split terminal to support three panes
+- Create initial vertical split (Claude | Terminal)
+- Split the right terminal pane horizontally (Terminal | npm)
+- Use tmux: `split-window -v` on the right pane
+- Auto-run specified npm command in bottom-right pane
 
 **Configuration:**
 ```json
-"claude": {
-  "flags": ["--resume"],
-  "split_terminal": true
+{
+  "events": {
+    "cwd": "true",
+    "claude": {
+      "flags": ["--resume"],
+      "split_terminal": true
+    },
+    "npm": "dev"
+  }
+}
+```
+
+**Alternative configuration:**
+```json
+{
+  "events": {
+    "cwd": "true", 
+    "claude": "true",
+    "npm": {
+      "command": "dev",
+      "watch": true,
+      "auto_restart": false
+    }
+  }
 }
 ```
 
 **Benefits:**
-- Claude and terminal side-by-side for optimal workflow
-- Easy switching between AI assistance and command execution
-- Persistent session that can be reattached
+- Complete development environment in one tmux session
+- Claude AI + Terminal + Development server all visible
+- Perfect for web development workflows
+- Automatic npm script execution
 
-### Future claude Event Enhancements
-Additional options that could be implemented:
-```json
-"claude": {
-  "flags": ["--resume"],
-  "mode": "interactive", 
-  "project_context": true,
-  "working_directory": "src/",
-  "tmux_layout": "even-horizontal"
-}
+**Tmux Layout:**
+```
+┌──────────────┬──────────────┐
+│              │   Terminal   │
+│    Claude    ├──────────────┤
+│   (full      │ npm run dev  │
+│   height)    │              │
+└──────────────┴──────────────┘
 ```
 
+### Two-Pane Terminal + NPM Layout
+When `cwd` and `npm` events are enabled (without Claude), create a two-pane tmux layout:
+- **Left pane**: Shell terminal in project directory
+- **Right pane**: NPM command running (e.g., `npm run dev`, `npm test`)
+
+**Tmux Layout:**
+```
+┌──────────────┬──────────────┐
+│              │              │
+│   Terminal   │ npm run dev  │
+│              │              │
+│              │              │
+└──────────────┴──────────────┘
+```
+
+**Use cases:**
+- Traditional development workflow without AI assistance
+- Monitoring build output while running commands
+- Side-by-side terminal and dev server
+
 ## Future Ideas
+
+### Auto-enable Split Terminal
+When both `cwd` and `claude` events are enabled, automatically enable split terminal mode without requiring explicit configuration.
+
+### Project Templates
+Pre-configured project templates for common development stacks (React, Node.js, Python, etc.) with appropriate events and npm commands.
 
 *Add more ideas here as they come up...*

@@ -64,17 +64,26 @@ class open extends command {
             me.shellCommands = [];
         }
 
-        // Check for split terminal scenario
+        // Intelligent layout detection
         const hasCwd = events.includes('cwd');
         const hasClaudeEvent = events.includes('claude');
-        const claudeConfig = project.events.claude;
-        const shouldUseSplitTerminal = hasCwd && hasClaudeEvent && 
-            claudeConfig && typeof claudeConfig === 'object' && claudeConfig.split_terminal;
-
-        if (shouldUseSplitTerminal) {
+        const hasNpmEvent = events.includes('npm');
+        
+        if (hasCwd && hasClaudeEvent && hasNpmEvent) {
+            // Three-pane layout: Claude + Terminal + NPM
+            await me.handleThreePaneLayout(project, isShellMode);
+            // Process other events except cwd, claude, and npm
+            events.filter(e => !['cwd', 'claude', 'npm'].includes(e)).forEach(me.processEvent.bind(me));
+        } else if (hasCwd && hasNpmEvent) {
+            // Two-pane layout: Terminal + NPM (no Claude)
+            await me.handleTwoPaneNpmLayout(project, isShellMode);
+            // Process other events except cwd and npm
+            events.filter(e => !['cwd', 'npm'].includes(e)).forEach(me.processEvent.bind(me));
+        } else if (hasCwd && hasClaudeEvent) {
+            // Two-pane layout: Claude + Terminal (existing split terminal)
             await me.handleSplitTerminal(project, isShellMode);
             // Process other events except cwd and claude
-            events.filter(e => e !== 'cwd' && e !== 'claude').forEach(me.processEvent.bind(me));
+            events.filter(e => !['cwd', 'claude'].includes(e)).forEach(me.processEvent.bind(me));
         } else {
             // Normal event processing
             events.forEach(me.processEvent.bind(me));
@@ -132,6 +141,118 @@ class open extends command {
                 me.processEvent('cwd');
                 me.processEvent('claude');
             }
+        }
+    }
+
+    async handleThreePaneLayout(project, isShellMode) {
+        let me = this;
+        const tmux = new TmuxManager();
+        const claudeConfig = project.events.claude;
+        const claudeArgs = (claudeConfig && claudeConfig.flags) ? claudeConfig.flags : [];
+        const npmConfig = project.events.npm;
+        const npmCommand = me.getNpmCommand(npmConfig);
+        
+        if (isShellMode) {
+            // Check if tmux is available
+            if (await tmux.isTmuxAvailable()) {
+                const commands = tmux.buildThreePaneShellCommands(
+                    project.name, 
+                    project.path.path, 
+                    claudeArgs,
+                    npmCommand
+                );
+                me.shellCommands.push(...commands);
+            } else {
+                // Fall back to normal behavior if tmux is not available
+                me.log.debug('Tmux not available, falling back to normal mode');
+                me.shellCommands.push(`cd "${project.path.path}"`);
+                const claudeCommand = claudeArgs.length > 0 
+                    ? `claude ${claudeArgs.join(' ')}`
+                    : 'claude';
+                me.shellCommands.push(claudeCommand);
+                me.shellCommands.push(npmCommand);
+            }
+        } else {
+            // Direct execution mode
+            if (await tmux.isTmuxAvailable()) {
+                try {
+                    const sessionName = await tmux.createThreePaneSession(
+                        project.name, 
+                        project.path.path, 
+                        claudeArgs,
+                        npmCommand
+                    );
+                    await tmux.attachToSession(sessionName);
+                } catch (error) {
+                    me.log.debug(`Failed to create tmux session: ${error.message}`);
+                    // Fall back to normal behavior
+                    me.processEvent('cwd');
+                    me.processEvent('claude');
+                    me.processEvent('npm');
+                }
+            } else {
+                me.log.debug('Tmux not available, falling back to normal mode');
+                // Fall back to normal behavior
+                me.processEvent('cwd');
+                me.processEvent('claude');
+                me.processEvent('npm');
+            }
+        }
+    }
+
+    async handleTwoPaneNpmLayout(project, isShellMode) {
+        let me = this;
+        const tmux = new TmuxManager();
+        const npmConfig = project.events.npm;
+        const npmCommand = me.getNpmCommand(npmConfig);
+        
+        if (isShellMode) {
+            // Check if tmux is available
+            if (await tmux.isTmuxAvailable()) {
+                const commands = tmux.buildTwoPaneNpmShellCommands(
+                    project.name, 
+                    project.path.path, 
+                    npmCommand
+                );
+                me.shellCommands.push(...commands);
+            } else {
+                // Fall back to normal behavior if tmux is not available
+                me.log.debug('Tmux not available, falling back to normal mode');
+                me.shellCommands.push(`cd "${project.path.path}"`);
+                me.shellCommands.push(npmCommand);
+            }
+        } else {
+            // Direct execution mode
+            if (await tmux.isTmuxAvailable()) {
+                try {
+                    const sessionName = await tmux.createTwoPaneNpmSession(
+                        project.name, 
+                        project.path.path, 
+                        npmCommand
+                    );
+                    await tmux.attachToSession(sessionName);
+                } catch (error) {
+                    me.log.debug(`Failed to create tmux session: ${error.message}`);
+                    // Fall back to normal behavior
+                    me.processEvent('cwd');
+                    me.processEvent('npm');
+                }
+            } else {
+                me.log.debug('Tmux not available, falling back to normal mode');
+                // Fall back to normal behavior
+                me.processEvent('cwd');
+                me.processEvent('npm');
+            }
+        }
+    }
+
+    getNpmCommand(npmConfig) {
+        if (typeof npmConfig === 'string') {
+            return `npm run ${npmConfig}`;
+        } else if (npmConfig && typeof npmConfig === 'object' && npmConfig.command) {
+            return `npm run ${npmConfig.command}`;
+        } else {
+            return 'npm run dev';
         }
     }
 
@@ -208,6 +329,18 @@ class open extends command {
                         me.shellCommands.push(claudeCommand);
                     } else {
                         spawn('claude', claudeArgs, {
+                            cwd: environment.project.path.path,
+                            stdio: 'inherit'
+                        });
+                    }
+                break;
+                case 'npm':
+                    let npmCommand = me.getNpmCommand(project.events.npm);
+                    
+                    if (isShellMode) {
+                        me.shellCommands.push(npmCommand);
+                    } else {
+                        spawn('npm', ['run', npmCommand.replace('npm run ', '')], {
                             cwd: environment.project.path.path,
                             stdio: 'inherit'
                         });

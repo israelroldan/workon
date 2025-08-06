@@ -127,7 +127,8 @@ class manage extends command {
                     { name: 'Change directory (cwd)', value: 'cwd', checked: true },
                     { name: 'Open in IDE', value: 'ide', checked: true },
                     { name: 'Open homepage in browser', value: 'web' },
-                    { name: 'Launch Claude Code', value: 'claude' }
+                    { name: 'Launch Claude Code', value: 'claude' },
+                    { name: 'Run NPM command', value: 'npm' }
                 ]
             }
         ];
@@ -141,6 +142,10 @@ class manage extends command {
                 // Ask for Claude-specific configuration
                 const claudeConfig = await me.configureClaudeEvent();
                 events[event] = claudeConfig;
+            } else if (event === 'npm') {
+                // Ask for NPM-specific configuration
+                const npmConfig = await me.configureNpmEvent();
+                events[event] = npmConfig;
             } else {
                 events[event] = 'true';
             }
@@ -247,7 +252,8 @@ class manage extends command {
                     { name: 'Change directory (cwd)', value: 'cwd', checked: currentEvents.includes('cwd') },
                     { name: 'Open in IDE', value: 'ide', checked: currentEvents.includes('ide') },
                     { name: 'Open homepage in browser', value: 'web', checked: currentEvents.includes('web') },
-                    { name: 'Launch Claude Code', value: 'claude', checked: currentEvents.includes('claude') }
+                    { name: 'Launch Claude Code', value: 'claude', checked: currentEvents.includes('claude') },
+                    { name: 'Run NPM command', value: 'npm', checked: currentEvents.includes('npm') }
                 ]
             }
         ];
@@ -275,6 +281,25 @@ class manage extends command {
                     }
                 } else {
                     events[event] = await me.configureClaudeEvent();
+                }
+            } else if (event === 'npm') {
+                // If npm was previously configured with advanced options, preserve or update them
+                const existingNpmConfig = project.events && project.events.npm;
+                if (existingNpmConfig && typeof existingNpmConfig === 'object') {
+                    const keepConfig = await inquirer.prompt([{
+                        type: 'confirm',
+                        name: 'keep',
+                        message: 'Keep existing NPM configuration?',
+                        default: true
+                    }]);
+                    
+                    if (keepConfig.keep) {
+                        events[event] = existingNpmConfig;
+                    } else {
+                        events[event] = await me.configureNpmEvent();
+                    }
+                } else {
+                    events[event] = await me.configureNpmEvent();
                 }
             } else {
                 events[event] = 'true';
@@ -447,6 +472,70 @@ class manage extends command {
 
         if (advancedAnswers.split_terminal) {
             config.split_terminal = true;
+        }
+
+        return config;
+    }
+
+    async configureNpmEvent() {
+        let me = this;
+        
+        me.log.log('\n📦 Configure NPM Event\n');
+        
+        const npmQuestions = [
+            {
+                type: 'input',
+                name: 'command',
+                message: 'NPM script to run (e.g., dev, start, test):',
+                default: 'dev',
+                validate: (value) => {
+                    if (!value.trim()) {
+                        return 'NPM command cannot be empty';
+                    }
+                    return true;
+                }
+            },
+            {
+                type: 'confirm',
+                name: 'useAdvanced',
+                message: 'Configure advanced NPM options?',
+                default: false
+            }
+        ];
+
+        const basicAnswers = await inquirer.prompt(npmQuestions);
+        
+        if (!basicAnswers.useAdvanced) {
+            return basicAnswers.command;
+        }
+
+        const advancedQuestions = [
+            {
+                type: 'confirm',
+                name: 'watch',
+                message: 'Enable watch mode (if supported by command)?',
+                default: true
+            },
+            {
+                type: 'confirm',
+                name: 'auto_restart',
+                message: 'Auto-restart on crashes?',
+                default: false
+            }
+        ];
+
+        const advancedAnswers = await inquirer.prompt(advancedQuestions);
+        
+        const config = {
+            command: basicAnswers.command
+        };
+
+        if (advancedAnswers.watch) {
+            config.watch = true;
+        }
+
+        if (advancedAnswers.auto_restart) {
+            config.auto_restart = true;
         }
 
         return config;
