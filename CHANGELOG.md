@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.1.0](https://github.com/israelroldan/workon/compare/v2.0.0...v2.1.0) (2025-08-07)
+
+
+### Features
+
+* Introduce colon syntax for selective command execution ([7b2193a](https://github.com/israelroldan/workon/commit/7b2193ace8cc014dfd71894e3e9f49e0fdea33b9))
+
 ## [2.0.0](https://github.com/israelroldan/workon/compare/v2.0.0-alpha.1...v2.0.0) (2025-08-07)
 
 ## [2.0.0-alpha.1](https://github.com/israelroldan/workon/compare/v1.4.1...v2.0.0-alpha.1) (2025-08-07)
