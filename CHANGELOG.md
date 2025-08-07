@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [2.1.1](https://github.com/israelroldan/workon/compare/v2.1.0...v2.1.1) (2025-08-07)
+
+
+### Bug Fixes
+
+* Update tmux attach command to use -CC flag for compatibility with iTerm ([2d3d7c7](https://github.com/israelroldan/workon/commit/2d3d7c73fb164f1718908d276f91b8fba004f42d))
+
 ## [2.1.0](https://github.com/israelroldan/workon/compare/v2.0.0...v2.1.0) (2025-08-07)
 
 
