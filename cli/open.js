@@ -4,10 +4,15 @@ const { ProjectEnvironment } = require('../lib/environment');
 const spawn = require('child_process').spawn;
 const File = require('phylo');
 const TmuxManager = require('../lib/tmux');
+const registry = require('../commands/registry');
 
 class open extends command {
-    execute (params) {
+    async execute (params) {
         let me = this;
+        
+        // Initialize command registry
+        await registry.initialize();
+        
         if (params.project) {
             return me.processProject(params.project);
         } else {
@@ -73,20 +78,28 @@ class open extends command {
             // Three-pane layout: Claude + Terminal + NPM
             await me.handleThreePaneLayout(project, isShellMode);
             // Process other events except cwd, claude, and npm
-            events.filter(e => !['cwd', 'claude', 'npm'].includes(e)).forEach(me.processEvent.bind(me));
+            for (const event of events.filter(e => !['cwd', 'claude', 'npm'].includes(e))) {
+                await me.processEvent(event);
+            }
         } else if (hasCwd && hasNpmEvent) {
             // Two-pane layout: Terminal + NPM (no Claude)
             await me.handleTwoPaneNpmLayout(project, isShellMode);
             // Process other events except cwd and npm
-            events.filter(e => !['cwd', 'npm'].includes(e)).forEach(me.processEvent.bind(me));
+            for (const event of events.filter(e => !['cwd', 'npm'].includes(e))) {
+                await me.processEvent(event);
+            }
         } else if (hasCwd && hasClaudeEvent) {
             // Two-pane layout: Claude + Terminal (existing split terminal)
             await me.handleSplitTerminal(project, isShellMode);
             // Process other events except cwd and claude
-            events.filter(e => !['cwd', 'claude'].includes(e)).forEach(me.processEvent.bind(me));
+            for (const event of events.filter(e => !['cwd', 'claude'].includes(e))) {
+                await me.processEvent(event);
+            }
         } else {
             // Normal event processing
-            events.forEach(me.processEvent.bind(me));
+            for (const event of events) {
+                await me.processEvent(event);
+            }
         }
 
         // Output collected shell commands if in shell mode
@@ -132,14 +145,14 @@ class open extends command {
                 } catch (error) {
                     me.log.debug(`Failed to create tmux session: ${error.message}`);
                     // Fall back to normal behavior
-                    me.processEvent('cwd');
-                    me.processEvent('claude');
+                    await me.processEvent('cwd');
+                    await me.processEvent('claude');
                 }
             } else {
                 me.log.debug('Tmux not available, falling back to normal mode');
                 // Fall back to normal behavior
-                me.processEvent('cwd');
-                me.processEvent('claude');
+                await me.processEvent('cwd');
+                await me.processEvent('claude');
             }
         }
     }
@@ -150,7 +163,8 @@ class open extends command {
         const claudeConfig = project.events.claude;
         const claudeArgs = (claudeConfig && claudeConfig.flags) ? claudeConfig.flags : [];
         const npmConfig = project.events.npm;
-        const npmCommand = me.getNpmCommand(npmConfig);
+        const NpmCommand = registry.getCommandByName('npm');
+        const npmCommand = NpmCommand ? NpmCommand._getNpmCommand(npmConfig) : 'npm run dev';
         
         if (isShellMode) {
             // Check if tmux is available
@@ -186,16 +200,16 @@ class open extends command {
                 } catch (error) {
                     me.log.debug(`Failed to create tmux session: ${error.message}`);
                     // Fall back to normal behavior
-                    me.processEvent('cwd');
-                    me.processEvent('claude');
-                    me.processEvent('npm');
+                    await me.processEvent('cwd');
+                    await me.processEvent('claude');
+                    await me.processEvent('npm');
                 }
             } else {
                 me.log.debug('Tmux not available, falling back to normal mode');
                 // Fall back to normal behavior
-                me.processEvent('cwd');
-                me.processEvent('claude');
-                me.processEvent('npm');
+                await me.processEvent('cwd');
+                await me.processEvent('claude');
+                await me.processEvent('npm');
             }
         }
     }
@@ -204,7 +218,8 @@ class open extends command {
         let me = this;
         const tmux = new TmuxManager();
         const npmConfig = project.events.npm;
-        const npmCommand = me.getNpmCommand(npmConfig);
+        const NpmCommand = registry.getCommandByName('npm');
+        const npmCommand = NpmCommand ? NpmCommand._getNpmCommand(npmConfig) : 'npm run dev';
         
         if (isShellMode) {
             // Check if tmux is available
@@ -234,34 +249,24 @@ class open extends command {
                 } catch (error) {
                     me.log.debug(`Failed to create tmux session: ${error.message}`);
                     // Fall back to normal behavior
-                    me.processEvent('cwd');
-                    me.processEvent('npm');
+                    await me.processEvent('cwd');
+                    await me.processEvent('npm');
                 }
             } else {
                 me.log.debug('Tmux not available, falling back to normal mode');
                 // Fall back to normal behavior
-                me.processEvent('cwd');
-                me.processEvent('npm');
+                await me.processEvent('cwd');
+                await me.processEvent('npm');
             }
         }
     }
 
-    getNpmCommand(npmConfig) {
-        if (typeof npmConfig === 'string') {
-            return `npm run ${npmConfig}`;
-        } else if (npmConfig && typeof npmConfig === 'object' && npmConfig.command) {
-            return `npm run ${npmConfig.command}`;
-        } else {
-            return 'npm run dev';
-        }
-    }
 
-    processEvent (event) {
+    async processEvent (event) {
         let me = this;
         let environment = me.root().environment;
         let project = environment.project;
         let scripts = project.scripts || {};
-        let homepage = project.homepage;
         let capitalEvt = `${event[0].toUpperCase()}${event.substring(1)}`;
 
         me.log.debug(`Processing event ${event}`);
@@ -276,79 +281,19 @@ class open extends command {
             let isShellMode = me.params.shell || me.root().params.shell;
             me.log.debug(`Shell mode is: ${isShellMode}`);
             
-            switch (event) {
-                case 'ide':
-                    if (isShellMode) {
-                        me.shellCommands.push(`${project.ide} "${project.path.path}" &`);
-                    } else {
-                        spawn(project.ide, [project.path.path]);
-                    }
-                break;
-                case 'cwd':
-                    if (isShellMode) {
-                        me.shellCommands.push(`cd "${environment.project.path.path}"`);
-                    } else {
-                        spawn(process.env.SHELL, ['-i'], {
-                            cwd: environment.project.path.path,
-                            stdio: 'inherit'
-                        });
-                    }
-                break;
-                case 'web':
-                    if (homepage) {
-                        if (isShellMode) {
-                            // Different approaches based on OS
-                            let openCmd;
-                            switch (process.platform) {
-                                case 'darwin': openCmd = 'open'; break;
-                                case 'win32': openCmd = 'start'; break;
-                                default: openCmd = 'xdg-open'; break;
-                            }
-                            me.shellCommands.push(`${openCmd} "${homepage}" &`);
-                        } else {
-                            require("openurl2").open(homepage);
-                        }
-                    }
-                break;
-                case 'claude':
-                    let claudeArgs = [];
-                    let claudeConfig = project.events.claude;
-                    
-                    // Handle advanced Claude configuration
-                    if (claudeConfig && typeof claudeConfig === 'object') {
-                        if (claudeConfig.flags && Array.isArray(claudeConfig.flags)) {
-                            claudeArgs = claudeArgs.concat(claudeConfig.flags);
-                        }
-                        // Additional config options can be handled here in the future
-                    }
-                    
-                    if (isShellMode) {
-                        let claudeCommand = claudeArgs.length > 0 
-                            ? `claude ${claudeArgs.join(' ')}`
-                            : 'claude';
-                        me.shellCommands.push(claudeCommand);
-                    } else {
-                        spawn('claude', claudeArgs, {
-                            cwd: environment.project.path.path,
-                            stdio: 'inherit'
-                        });
-                    }
-                break;
-                case 'npm':
-                    let npmCommand = me.getNpmCommand(project.events.npm);
-                    
-                    if (isShellMode) {
-                        me.shellCommands.push(npmCommand);
-                    } else {
-                        spawn('npm', ['run', npmCommand.replace('npm run ', '')], {
-                            cwd: environment.project.path.path,
-                            stdio: 'inherit'
-                        });
-                    }
-                break;
+            // Use CommandRegistry to process the event
+            const command = registry.getCommandByName(event);
+            if (command && command.processing) {
+                await command.processing.processEvent({
+                    project,
+                    isShellMode,
+                    shellCommands: me.shellCommands || []
+                });
+            } else {
+                me.log.debug(`No command handler found for event: ${event}`);
             }
         }
-        if (`before${capitalEvt}` in scripts) {
+        if (`after${capitalEvt}` in scripts) {
             me.log.debug(`Found 'after' script, unfortunately scripts are not yet supported.`);
         }
     }

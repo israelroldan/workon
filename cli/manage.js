@@ -3,11 +3,16 @@ const inquirer = require('inquirer');
 const File = require('phylo');
 const ProjectValidator = require('../lib/validation');
 const path = require('path');
+const registry = require('../commands/registry');
 
 class manage extends command {
-    execute(params) {
+    async execute(params) {
         let me = this;
         me.validator = new ProjectValidator(me.config);
+        
+        // Initialize command registry
+        await registry.initialize();
+        
         me.showLogo();
         return me.startManagement();
     }
@@ -123,13 +128,11 @@ class manage extends command {
                 type: 'checkbox',
                 name: 'events',
                 message: 'Select events to enable:',
-                choices: [
-                    { name: 'Change directory (cwd)', value: 'cwd', checked: true },
-                    { name: 'Open in IDE', value: 'ide', checked: true },
-                    { name: 'Open homepage in browser', value: 'web' },
-                    { name: 'Launch Claude Code', value: 'claude' },
-                    { name: 'Run NPM command', value: 'npm' }
-                ]
+                choices: registry.getCommandsForManageUI().map(cmd => ({
+                    name: cmd.name,
+                    value: cmd.value,
+                    checked: ['cwd', 'ide'].includes(cmd.value) // Default enable cwd and ide
+                }))
             }
         ];
 
@@ -138,14 +141,10 @@ class manage extends command {
         // Convert events array to object and configure advanced options
         const events = {};
         for (const event of answers.events) {
-            if (event === 'claude') {
-                // Ask for Claude-specific configuration
-                const claudeConfig = await me.configureClaudeEvent();
-                events[event] = claudeConfig;
-            } else if (event === 'npm') {
-                // Ask for NPM-specific configuration
-                const npmConfig = await me.configureNpmEvent();
-                events[event] = npmConfig;
+            const command = registry.getCommandByName(event);
+            if (command && command.configuration) {
+                const config = await command.configuration.configureInteractive();
+                events[event] = config;
             } else {
                 events[event] = 'true';
             }
@@ -248,13 +247,11 @@ class manage extends command {
                 type: 'checkbox',
                 name: 'events',
                 message: 'Select events to enable:',
-                choices: [
-                    { name: 'Change directory (cwd)', value: 'cwd', checked: currentEvents.includes('cwd') },
-                    { name: 'Open in IDE', value: 'ide', checked: currentEvents.includes('ide') },
-                    { name: 'Open homepage in browser', value: 'web', checked: currentEvents.includes('web') },
-                    { name: 'Launch Claude Code', value: 'claude', checked: currentEvents.includes('claude') },
-                    { name: 'Run NPM command', value: 'npm', checked: currentEvents.includes('npm') }
-                ]
+                choices: registry.getCommandsForManageUI().map(cmd => ({
+                    name: cmd.name,
+                    value: cmd.value,
+                    checked: currentEvents.includes(cmd.value)
+                }))
             }
         ];
 
@@ -263,43 +260,25 @@ class manage extends command {
         // Convert events array to object and configure advanced options
         const events = {};
         for (const event of answers.events) {
-            if (event === 'claude') {
-                // If claude was previously configured with advanced options, preserve or update them
-                const existingClaudeConfig = project.events && project.events.claude;
-                if (existingClaudeConfig && typeof existingClaudeConfig === 'object') {
+            const command = registry.getCommandByName(event);
+            if (command && command.configuration) {
+                // Check if there's existing configuration to preserve
+                const existingConfig = project.events && project.events[event];
+                if (existingConfig && typeof existingConfig === 'object') {
                     const keepConfig = await inquirer.prompt([{
                         type: 'confirm',
                         name: 'keep',
-                        message: 'Keep existing Claude configuration?',
+                        message: `Keep existing ${command.metadata.displayName} configuration?`,
                         default: true
                     }]);
                     
                     if (keepConfig.keep) {
-                        events[event] = existingClaudeConfig;
+                        events[event] = existingConfig;
                     } else {
-                        events[event] = await me.configureClaudeEvent();
+                        events[event] = await command.configuration.configureInteractive();
                     }
                 } else {
-                    events[event] = await me.configureClaudeEvent();
-                }
-            } else if (event === 'npm') {
-                // If npm was previously configured with advanced options, preserve or update them
-                const existingNpmConfig = project.events && project.events.npm;
-                if (existingNpmConfig && typeof existingNpmConfig === 'object') {
-                    const keepConfig = await inquirer.prompt([{
-                        type: 'confirm',
-                        name: 'keep',
-                        message: 'Keep existing NPM configuration?',
-                        default: true
-                    }]);
-                    
-                    if (keepConfig.keep) {
-                        events[event] = existingNpmConfig;
-                    } else {
-                        events[event] = await me.configureNpmEvent();
-                    }
-                } else {
-                    events[event] = await me.configureNpmEvent();
+                    events[event] = await command.configuration.configureInteractive();
                 }
             } else {
                 events[event] = 'true';
@@ -424,122 +403,6 @@ class manage extends command {
         }
     }
 
-    async configureClaudeEvent() {
-        let me = this;
-        
-        me.log.log('\n⚙️  Configure Claude Event\n');
-        
-        const claudeQuestions = [
-            {
-                type: 'confirm',
-                name: 'useAdvanced',
-                message: 'Configure advanced Claude options?',
-                default: false
-            }
-        ];
-
-        const claudeAnswer = await inquirer.prompt(claudeQuestions);
-        
-        if (!claudeAnswer.useAdvanced) {
-            return 'true';
-        }
-
-        const advancedQuestions = [
-            {
-                type: 'input',
-                name: 'flags',
-                message: 'Claude flags (comma-separated, e.g. --resume,--debug):',
-                filter: (input) => {
-                    if (!input.trim()) return [];
-                    return input.split(',').map(flag => flag.trim()).filter(flag => flag);
-                }
-            },
-            {
-                type: 'confirm',
-                name: 'split_terminal',
-                message: 'Enable split terminal (Claude + shell side-by-side with tmux)?',
-                default: false
-            }
-        ];
-
-        const advancedAnswers = await inquirer.prompt(advancedQuestions);
-        
-        const config = {};
-
-        if (advancedAnswers.flags && advancedAnswers.flags.length > 0) {
-            config.flags = advancedAnswers.flags;
-        }
-
-        if (advancedAnswers.split_terminal) {
-            config.split_terminal = true;
-        }
-
-        return config;
-    }
-
-    async configureNpmEvent() {
-        let me = this;
-        
-        me.log.log('\n📦 Configure NPM Event\n');
-        
-        const npmQuestions = [
-            {
-                type: 'input',
-                name: 'command',
-                message: 'NPM script to run (e.g., dev, start, test):',
-                default: 'dev',
-                validate: (value) => {
-                    if (!value.trim()) {
-                        return 'NPM command cannot be empty';
-                    }
-                    return true;
-                }
-            },
-            {
-                type: 'confirm',
-                name: 'useAdvanced',
-                message: 'Configure advanced NPM options?',
-                default: false
-            }
-        ];
-
-        const basicAnswers = await inquirer.prompt(npmQuestions);
-        
-        if (!basicAnswers.useAdvanced) {
-            return basicAnswers.command;
-        }
-
-        const advancedQuestions = [
-            {
-                type: 'confirm',
-                name: 'watch',
-                message: 'Enable watch mode (if supported by command)?',
-                default: true
-            },
-            {
-                type: 'confirm',
-                name: 'auto_restart',
-                message: 'Auto-restart on crashes?',
-                default: false
-            }
-        ];
-
-        const advancedAnswers = await inquirer.prompt(advancedQuestions);
-        
-        const config = {
-            command: basicAnswers.command
-        };
-
-        if (advancedAnswers.watch) {
-            config.watch = true;
-        }
-
-        if (advancedAnswers.auto_restart) {
-            config.auto_restart = true;
-        }
-
-        return config;
-    }
 }
 
 manage.define({
