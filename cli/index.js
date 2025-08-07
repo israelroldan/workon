@@ -62,8 +62,8 @@ class workon extends container {
             me.log.setLogLevel('debug');
         }
 
-        if (params['setup-completion']) {
-            me.log.debug('Configuring command-line completion');
+        if (params.completion) {
+            me.log.debug('Setting up command-line completion');
             me.completion.setupShellInitFile();
             return true;
         } else if (params.init) {
@@ -164,11 +164,11 @@ workon.define({
     help: {
         '': 'Work on something great!',
         debug: 'Provide debug logging output',
-        'setup-completion': 'Configure command line tab completion (see help for details)',
+        completion: 'Configure and generate shell tab completion',
         shell: 'Output shell commands instead of spawning processes',
         init: 'Generate shell integration function for seamless directory switching'
     },
-    switches: '[d#debug:boolean=false] [setup-completion:boolean=false] [shell:boolean=false] [init:boolean=false]',
+    switches: '[d#debug:boolean=false] [completion:boolean=false] [shell:boolean=false] [init:boolean=false]',
     commands: {
         '': 'open',
         interactive: {

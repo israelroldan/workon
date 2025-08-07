@@ -176,7 +176,7 @@ workon myproject --shell
 Set up tab completion:
 
 ```bash
-workon --setup-completion
+workon --completion
 ```
 
 ### Debug Mode
