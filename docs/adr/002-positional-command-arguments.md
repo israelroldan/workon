@@ -1,9 +1,15 @@
 # ADR-002: Positional Command Arguments
 
-**Status:** Proposed  
-**Date:** 2025-08-06  
+**Status:** Implemented (as Colon Syntax)  
+**Date:** 2025-08-07  
 **Deciders:** Israel Roldan  
 **Related:** ADR-001 (Command-Centric Architecture)
+
+**Implementation Note:** Instead of positional arguments, we implemented a cleaner colon syntax approach:
+- `workon project` - Execute all commands
+- `workon project:cwd` - Execute single command  
+- `workon project:cwd,claude` - Execute multiple commands
+- `workon project:help` - Show available commands
 
 ## Context
 

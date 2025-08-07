@@ -21,24 +21,42 @@ class open extends command {
         }
     }
 
-    async processProject (project) {
+    async processProject (projectParam) {
         let me = this;
         let environment = me.root().environment;
+
+        // Parse colon syntax: project:command1,command2
+        const [projectName, commandsString] = projectParam.split(':');
+        const requestedCommands = commandsString ? commandsString.split(',').map(cmd => cmd.trim()) : null;
+        
+        // Special case: project:help shows available commands for that project
+        if (commandsString === 'help') {
+            return me.showProjectHelp(projectName);
+        }
+        
+        me.log.debug(`Project: ${projectName}, Commands: ${requestedCommands ? requestedCommands.join(', ') : 'all'}`);
 
         let projects = me.config.get('projects');
         if (!projects) {
             me.config.set('projects', {});
         } else {
-            if (environment.$isProjectEnvironment && (project === 'this' || project === '.')) {
+            if (environment.$isProjectEnvironment && (projectName === 'this' || projectName === '.')) {
                 me.log.info(`Open current: ${environment.project.name}`);
             } else {
-                if (project in projects) {
-                    let cfg = projects[project];
-                    cfg.name = project;
-                    await me.switchTo(ProjectEnvironment.load(cfg, me.config.get('project_defaults')));
+                if (projectName in projects) {
+                    let cfg = projects[projectName];
+                    cfg.name = projectName;
+                    
+                    // Validate requested commands if specified
+                    if (requestedCommands) {
+                        me.validateRequestedCommands(requestedCommands, cfg, projectName);
+                    }
+                    
+                    const projectEnv = ProjectEnvironment.load(cfg, me.config.get('project_defaults'));
+                    await me.switchTo(projectEnv, requestedCommands);
                 } else {
-                    me.log.debug(`Project '${project}' not found, starting interactive mode`);
-                    return me.startInteractiveMode(project);
+                    me.log.debug(`Project '${projectName}' not found, starting interactive mode`);
+                    return me.startInteractiveMode(projectName);
                 }
             }
         }
@@ -52,16 +70,40 @@ class open extends command {
         return interactiveCmd.dispatch(new me.args.constructor([project]))
     }
 
-    async switchTo (environment) {
+    validateRequestedCommands(requestedCommands, projectConfig, projectName) {
+        const configuredEvents = Object.keys(projectConfig.events || {});
+        const invalidCommands = requestedCommands.filter(cmd => !configuredEvents.includes(cmd));
+        
+        if (invalidCommands.length > 0) {
+            const availableCommands = configuredEvents.join(', ');
+            throw new Error(
+                `Commands not configured for project '${projectName}': ${invalidCommands.join(', ')}\n` +
+                `Available commands: ${availableCommands}`
+            );
+        }
+    }
+
+    async switchTo (environment, requestedCommands = null) {
         let me = this;
         me.root().environment = environment;
         let project = environment.project;
 
-        let events = Object.keys(project.events).filter((e) => project.events[e]);
+        // Determine which events to execute
+        let events;
+        if (requestedCommands) {
+            // Use requested commands (already validated)
+            events = me.resolveCommandDependencies(requestedCommands, project);
+            me.log.debug(`Executing requested commands: ${events.join(', ')}`);
+        } else {
+            // Execute all configured events (current behavior)
+            events = Object.keys(project.events).filter((e) => project.events[e]);
+            me.log.debug(`Executing all configured commands: ${events.join(', ')}`);
+        }
+
         me.log.debug(`Shell is ${process.env.SHELL}`);
         me.log.debug(`Project path is ${project.path.path}`);
         me.log.debug(`IDE command is: ${project.ide}`);
-        me.log.debug(`Actions are: ${events}`);
+        me.log.debug(`Final events to execute: ${events.join(', ')}`);
 
         // Initialize shell commands collector if in shell mode
         let isShellMode = me.params.shell || me.root().params.shell;
@@ -69,7 +111,7 @@ class open extends command {
             me.shellCommands = [];
         }
 
-        // Intelligent layout detection
+        // Intelligent layout detection based on actual events being executed
         const hasCwd = events.includes('cwd');
         const hasClaudeEvent = events.includes('claude');
         const hasNpmEvent = events.includes('npm');
@@ -96,7 +138,7 @@ class open extends command {
                 await me.processEvent(event);
             }
         } else {
-            // Normal event processing
+            // Normal event processing - execute commands individually
             for (const event of events) {
                 await me.processEvent(event);
             }
@@ -106,6 +148,66 @@ class open extends command {
         if (isShellMode && me.shellCommands.length > 0) {
             console.log(me.shellCommands.join('\n'));
         }
+    }
+
+    showProjectHelp(projectName) {
+        let me = this;
+        let projects = me.config.get('projects');
+        
+        if (!projects || !(projectName in projects)) {
+            me.log.error(`Project '${projectName}' not found`);
+            return;
+        }
+        
+        const projectConfig = projects[projectName];
+        const configuredEvents = Object.keys(projectConfig.events || {});
+        
+        console.log(`\n📋 Available commands for '${projectName}':`);
+        console.log('─'.repeat(50));
+        
+        for (const eventName of configuredEvents) {
+            const command = registry.getCommandByName(eventName);
+            if (command && command.metadata) {
+                const config = projectConfig.events[eventName];
+                let configDesc = '';
+                if (config !== true && config !== 'true') {
+                    if (typeof config === 'object') {
+                        configDesc = ` (${JSON.stringify(config)})`;
+                    } else {
+                        configDesc = ` (${config})`;
+                    }
+                }
+                console.log(`  ${eventName.padEnd(8)} - ${command.metadata.description}${configDesc}`);
+            }
+        }
+        
+        console.log('\n💡 Usage examples:');
+        console.log(`  workon ${projectName}                    # Execute all commands`);
+        console.log(`  workon ${projectName}:cwd               # Just change directory`);
+        console.log(`  workon ${projectName}:claude            # Just Claude (auto-adds cwd)`);
+        
+        if (configuredEvents.length > 1) {
+            const twoCommands = configuredEvents.slice(0, 2).join(',');
+            console.log(`  workon ${projectName}:${twoCommands.padEnd(12)} # Multiple commands`);
+        }
+        
+        console.log(`  workon ${projectName}:cwd --shell       # Output shell commands\n`);
+    }
+
+    resolveCommandDependencies(requestedCommands, project) {
+        const resolved = [...requestedCommands];
+        
+        // Auto-add cwd dependency for commands that need it
+        const needsCwd = ['claude', 'npm', 'ide'];
+        const needsCwdCommands = requestedCommands.filter(cmd => needsCwd.includes(cmd));
+        
+        if (needsCwdCommands.length > 0 && !requestedCommands.includes('cwd')) {
+            resolved.unshift('cwd'); // Add cwd at the beginning
+            this.log.debug(`Auto-added 'cwd' dependency for commands: ${needsCwdCommands.join(', ')}`);
+        }
+        
+        // Remove duplicates while preserving order
+        return [...new Set(resolved)];
     }
 
     async handleSplitTerminal(project, isShellMode) {
