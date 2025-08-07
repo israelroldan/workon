@@ -1,6 +1,13 @@
-# Change Log
+# Changelog
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+
+## [2.0.0-alpha.1](https://github.com/israelroldan/workon/compare/v1.4.1...v2.0.0-alpha.1) (2025-08-07)
+
+
+### Features
+
+* Refactor to Command-Centric Architecture and enhance command management ([b7f8478](https://github.com/israelroldan/workon/commit/b7f84789e677222af34ae2018b7eb452dd054e34))
 
 <a name="1.4.1"></a>
 ## [1.4.1](https://github.com/israelroldan/workon/compare/v1.4.0...v1.4.1) (2025-08-07)

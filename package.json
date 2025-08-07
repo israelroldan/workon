@@ -1,6 +1,6 @@
 {
   "name": "workon",
-  "version": "1.4.1",
+  "version": "2.0.0-alpha.1",
   "description": "Work on something great!",
   "main": "index.js",
   "scripts": {
