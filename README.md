@@ -14,6 +14,10 @@ A productivity CLI tool that helps developers quickly switch between projects wi
 ⚡ **Interactive Setup** - Guided project configuration  
 🔄 **Backward Compatible** - Legacy nested shell mode still available
 
+## Requirements
+
+- Node.js >= 20
+
 ## Installation
 
 ### Option 1: Global Installation (Recommended)
@@ -34,7 +38,7 @@ source ~/.zshrc  # or ~/.bashrc
 
 ```bash
 # Set up shell integration
-echo 'eval "$(npx workon --init)"' >> ~/.zshrc    # for zsh  
+echo 'eval "$(npx workon --init)"' >> ~/.zshrc    # for zsh
 echo 'eval "$(npx workon --init)"' >> ~/.bashrc   # for bash
 
 # Reload your shell
@@ -74,6 +78,9 @@ Projects are configured with:
   - `cwd`: Change directory to project path
   - `ide`: Open project in configured IDE
   - `web`: Open project homepage/docs
+  - `claude`: Launch Claude Code (with optional tmux split)
+  - `npm`: Run npm scripts (with optional tmux pane)
+  - `docker`: Start Docker containers
 
 ### Interactive Project Setup
 
@@ -204,11 +211,19 @@ If you've been using the nested shell mode, the new shell integration provides t
 
 ## Contributing
 
-This project uses [standard-version](https://github.com/conventional-changelog/standard-version) for releases.
-
 ```bash
-npm run release
+# Install dependencies
+pnpm install
+
+# Development
+pnpm run dev              # Run with tsx
+pnpm run build            # Build with tsup
+pnpm run lint             # Lint
+pnpm run type-check       # Type check
+pnpm run test             # Run tests
 ```
+
+Releases are automated via [release-please](https://github.com/googleapis/release-please).
 
 ## License
 
