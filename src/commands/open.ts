@@ -200,15 +200,19 @@ async function handleSplitTerminal(
   const claudeArgs =
     typeof claudeConfig === 'object' && claudeConfig.flags ? claudeConfig.flags : [];
 
+  let tmuxHandled = false;
+
   if (isShellMode) {
     if (await tmux.isTmuxAvailable()) {
       const commands = tmux.buildShellCommands(project.name, project.path.path, claudeArgs);
       shellCommands.push(...commands);
+      tmuxHandled = true;
     } else {
       log.debug('Tmux not available, falling back to normal mode');
       shellCommands.push(`cd "${project.path.path}"`);
       const claudeCommand = claudeArgs.length > 0 ? `claude ${claudeArgs.join(' ')}` : 'claude';
       shellCommands.push(claudeCommand);
+      tmuxHandled = true;
     }
   } else {
     if (await tmux.isTmuxAvailable()) {
@@ -219,12 +223,19 @@ async function handleSplitTerminal(
           claudeArgs
         );
         await tmux.attachToSession(sessionName);
+        tmuxHandled = true;
       } catch (error) {
         log.debug(`Failed to create tmux session: ${(error as Error).message}`);
-        for (const event of events.filter((e) => !['cwd', 'claude'].includes(e))) {
-          await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
-        }
       }
+    } else {
+      log.debug('Tmux not available, falling back to normal event processing');
+    }
+  }
+
+  // If tmux didn't handle cwd/claude, process them normally
+  if (!tmuxHandled) {
+    for (const event of events.filter((e) => ['cwd', 'claude'].includes(e))) {
+      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
     }
   }
 
@@ -250,6 +261,8 @@ async function handleThreePaneLayout(
   const { NpmEvent } = await import('../events/extensions/npm.js');
   const npmCommand = NpmEvent.getNpmCommand(npmConfig);
 
+  let tmuxHandled = false;
+
   if (isShellMode) {
     if (await tmux.isTmuxAvailable()) {
       const commands = tmux.buildThreePaneShellCommands(
@@ -259,11 +272,13 @@ async function handleThreePaneLayout(
         npmCommand
       );
       shellCommands.push(...commands);
+      tmuxHandled = true;
     } else {
       log.debug('Tmux not available, falling back to normal mode');
       shellCommands.push(`cd "${project.path.path}"`);
       shellCommands.push(claudeArgs.length > 0 ? `claude ${claudeArgs.join(' ')}` : 'claude');
       shellCommands.push(npmCommand);
+      tmuxHandled = true;
     }
   } else {
     if (await tmux.isTmuxAvailable()) {
@@ -275,9 +290,19 @@ async function handleThreePaneLayout(
           npmCommand
         );
         await tmux.attachToSession(sessionName);
+        tmuxHandled = true;
       } catch (error) {
         log.debug(`Failed to create tmux session: ${(error as Error).message}`);
       }
+    } else {
+      log.debug('Tmux not available, falling back to normal event processing');
+    }
+  }
+
+  // If tmux didn't handle cwd/claude/npm, process them normally
+  if (!tmuxHandled) {
+    for (const event of events.filter((e) => ['cwd', 'claude', 'npm'].includes(e))) {
+      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
     }
   }
 
@@ -300,6 +325,8 @@ async function handleTwoPaneNpmLayout(
   const { NpmEvent } = await import('../events/extensions/npm.js');
   const npmCommand = NpmEvent.getNpmCommand(npmConfig);
 
+  let tmuxHandled = false;
+
   if (isShellMode) {
     if (await tmux.isTmuxAvailable()) {
       const commands = tmux.buildTwoPaneNpmShellCommands(
@@ -308,10 +335,12 @@ async function handleTwoPaneNpmLayout(
         npmCommand
       );
       shellCommands.push(...commands);
+      tmuxHandled = true;
     } else {
       log.debug('Tmux not available, falling back to normal mode');
       shellCommands.push(`cd "${project.path.path}"`);
       shellCommands.push(npmCommand);
+      tmuxHandled = true;
     }
   } else {
     if (await tmux.isTmuxAvailable()) {
@@ -322,9 +351,19 @@ async function handleTwoPaneNpmLayout(
           npmCommand
         );
         await tmux.attachToSession(sessionName);
+        tmuxHandled = true;
       } catch (error) {
         log.debug(`Failed to create tmux session: ${(error as Error).message}`);
       }
+    } else {
+      log.debug('Tmux not available, falling back to normal event processing');
+    }
+  }
+
+  // If tmux didn't handle cwd/npm, process them normally
+  if (!tmuxHandled) {
+    for (const event of events.filter((e) => ['cwd', 'npm'].includes(e))) {
+      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
     }
   }
 
