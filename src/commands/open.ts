@@ -149,19 +149,26 @@ async function switchTo(
   const hasClaudeEvent = events.includes('claude');
   const hasNpmEvent = events.includes('npm');
 
+  const dryRun = options.dryRun || false;
+
   if (hasCwd && hasClaudeEvent && hasNpmEvent) {
-    await handleThreePaneLayout(project, isShellMode, shellCommands, events, ctx);
+    await handleThreePaneLayout(project, isShellMode, dryRun, shellCommands, events, ctx);
   } else if (hasCwd && hasNpmEvent) {
-    await handleTwoPaneNpmLayout(project, isShellMode, shellCommands, events, ctx);
+    await handleTwoPaneNpmLayout(project, isShellMode, dryRun, shellCommands, events, ctx);
   } else if (hasCwd && hasClaudeEvent) {
-    await handleSplitTerminal(project, isShellMode, shellCommands, events, ctx);
+    await handleSplitTerminal(project, isShellMode, dryRun, shellCommands, events, ctx);
   } else {
     // Normal event processing
     for (const event of events) {
-      if (!options.dryRun) {
+      if (!dryRun) {
         await processEvent(event, { project, isShellMode, shellCommands }, ctx);
       }
     }
+  }
+
+  // In dry-run mode, show what would be executed
+  if (dryRun) {
+    log.info('Dry run - would execute events:', events.join(', '));
   }
 
   // Output collected shell commands
@@ -190,6 +197,7 @@ function resolveCommandDependencies(
 async function handleSplitTerminal(
   project: { name: string; path: { path: string }; events: Record<string, unknown> },
   isShellMode: boolean,
+  dryRun: boolean,
   shellCommands: string[],
   events: string[],
   ctx: OpenContext
@@ -214,7 +222,7 @@ async function handleSplitTerminal(
       shellCommands.push(claudeCommand);
       tmuxHandled = true;
     }
-  } else {
+  } else if (!dryRun) {
     if (await tmux.isTmuxAvailable()) {
       try {
         const sessionName = await tmux.createSplitSession(
@@ -230,24 +238,31 @@ async function handleSplitTerminal(
     } else {
       log.debug('Tmux not available, falling back to normal event processing');
     }
+  } else {
+    // Dry run - skip tmux but mark as handled to avoid fallback execution
+    log.info(`Would create split tmux session '${project.name}' with Claude`);
+    tmuxHandled = true;
   }
 
   // If tmux didn't handle cwd/claude, process them normally
-  if (!tmuxHandled) {
+  if (!tmuxHandled && !dryRun) {
     for (const event of events.filter((e) => ['cwd', 'claude'].includes(e))) {
       await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
     }
   }
 
   // Process other events
-  for (const event of events.filter((e) => !['cwd', 'claude'].includes(e))) {
-    await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+  if (!dryRun) {
+    for (const event of events.filter((e) => !['cwd', 'claude'].includes(e))) {
+      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+    }
   }
 }
 
 async function handleThreePaneLayout(
   project: { name: string; path: { path: string }; events: Record<string, unknown> },
   isShellMode: boolean,
+  dryRun: boolean,
   shellCommands: string[],
   events: string[],
   ctx: OpenContext
@@ -280,7 +295,7 @@ async function handleThreePaneLayout(
       shellCommands.push(npmCommand);
       tmuxHandled = true;
     }
-  } else {
+  } else if (!dryRun) {
     if (await tmux.isTmuxAvailable()) {
       try {
         const sessionName = await tmux.createThreePaneSession(
@@ -297,24 +312,31 @@ async function handleThreePaneLayout(
     } else {
       log.debug('Tmux not available, falling back to normal event processing');
     }
+  } else {
+    // Dry run - skip tmux but mark as handled to avoid fallback execution
+    log.info(`Would create three-pane tmux session '${project.name}' with Claude and NPM`);
+    tmuxHandled = true;
   }
 
   // If tmux didn't handle cwd/claude/npm, process them normally
-  if (!tmuxHandled) {
+  if (!tmuxHandled && !dryRun) {
     for (const event of events.filter((e) => ['cwd', 'claude', 'npm'].includes(e))) {
       await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
     }
   }
 
   // Process other events
-  for (const event of events.filter((e) => !['cwd', 'claude', 'npm'].includes(e))) {
-    await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+  if (!dryRun) {
+    for (const event of events.filter((e) => !['cwd', 'claude', 'npm'].includes(e))) {
+      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+    }
   }
 }
 
 async function handleTwoPaneNpmLayout(
   project: { name: string; path: { path: string }; events: Record<string, unknown> },
   isShellMode: boolean,
+  dryRun: boolean,
   shellCommands: string[],
   events: string[],
   ctx: OpenContext
@@ -342,7 +364,7 @@ async function handleTwoPaneNpmLayout(
       shellCommands.push(npmCommand);
       tmuxHandled = true;
     }
-  } else {
+  } else if (!dryRun) {
     if (await tmux.isTmuxAvailable()) {
       try {
         const sessionName = await tmux.createTwoPaneNpmSession(
@@ -358,18 +380,24 @@ async function handleTwoPaneNpmLayout(
     } else {
       log.debug('Tmux not available, falling back to normal event processing');
     }
+  } else {
+    // Dry run - skip tmux but mark as handled to avoid fallback execution
+    log.info(`Would create two-pane tmux session '${project.name}' with NPM`);
+    tmuxHandled = true;
   }
 
   // If tmux didn't handle cwd/npm, process them normally
-  if (!tmuxHandled) {
+  if (!tmuxHandled && !dryRun) {
     for (const event of events.filter((e) => ['cwd', 'npm'].includes(e))) {
       await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
     }
   }
 
   // Process other events
-  for (const event of events.filter((e) => !['cwd', 'npm'].includes(e))) {
-    await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+  if (!dryRun) {
+    for (const event of events.filter((e) => !['cwd', 'npm'].includes(e))) {
+      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+    }
   }
 }
 
