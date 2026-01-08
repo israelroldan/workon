@@ -6,6 +6,9 @@ import type { EventHandler, EventMetadata } from '../types/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Detect if running from TypeScript source (tsx/ts-node) or compiled JS
+const isTypeScriptRuntime = __filename.endsWith('.ts');
+
 /**
  * Event Registry for auto-discovery and management of events
  * Scans the events directory and provides unified access to all events
@@ -38,6 +41,22 @@ class EventRegistryClass {
   }
 
   /**
+   * Find event file with either .ts or .js extension
+   */
+  private findEventFile(basePath: string): string | null {
+    // Try the detected runtime extension first, then fall back to the other
+    const extensions = isTypeScriptRuntime ? ['.ts', '.js'] : ['.js', '.ts'];
+
+    for (const ext of extensions) {
+      const filePath = basePath + ext;
+      if (existsSync(filePath)) {
+        return filePath;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Discover events in a specific directory
    */
   private async discoverEventsInDirectory(dir: string): Promise<void> {
@@ -46,16 +65,18 @@ class EventRegistryClass {
     const entries = readdirSync(dir, { withFileTypes: true });
 
     for (const entry of entries) {
-      // Handle both directory-based (index.ts) and file-based events
+      // Handle both directory-based (index.ts/js) and file-based events
       let eventFile: string | null = null;
 
       if (entry.isDirectory()) {
-        const indexFile = join(dir, entry.name, 'index.js');
-        if (existsSync(indexFile)) {
-          eventFile = indexFile;
+        eventFile = this.findEventFile(join(dir, entry.name, 'index'));
+      } else if (entry.isFile()) {
+        const isSourceFile = entry.name.endsWith('.ts') || entry.name.endsWith('.js');
+        const isIndex = entry.name === 'index.ts' || entry.name === 'index.js';
+
+        if (isSourceFile && !isIndex) {
+          eventFile = join(dir, entry.name);
         }
-      } else if (entry.isFile() && entry.name.endsWith('.js') && entry.name !== 'index.js') {
-        eventFile = join(dir, entry.name);
       }
 
       if (eventFile) {
