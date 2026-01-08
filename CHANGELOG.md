@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.0.0](https://github.com/israelroldan/workon/compare/v1.2.1...v2.0.0) (2026-01-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* Complete rewrite from JavaScript to TypeScript.
+    - Requires Node.js >= 20
+    - Switched from npm to pnpm
+    - CLI framework changed from switchit to Commander.js
+    - Prompts library changed from inquirer to @inquirer/prompts
+
+### Features
+
+* Add split terminal support for 'claude' event (tmux based) ([c700afc](https://github.com/israelroldan/workon/commit/c700afc636ad04cf3b9dafa1e6553617929082be))
+* Enhance 'claude' event configuration and validation ([12387e4](https://github.com/israelroldan/workon/commit/12387e489ff6832fd90dac82cee338a2dc48e215))
+* Integrate NPM command support and enhance terminal layouts ([f877ec4](https://github.com/israelroldan/workon/commit/f877ec457e213bc9431cde3a01415a0b9af27c3f))
+* Introduce colon syntax for selective command execution ([7b2193a](https://github.com/israelroldan/workon/commit/7b2193ace8cc014dfd71894e3e9f49e0fdea33b9))
+* Migrate to TypeScript with modern tooling ([#1](https://github.com/israelroldan/workon/issues/1)) ([3079aba](https://github.com/israelroldan/workon/commit/3079aba12637414521aba06afea69e4b0505bd44))
+* Refactor to Command-Centric Architecture and enhance command management ([b7f8478](https://github.com/israelroldan/workon/commit/b7f84789e677222af34ae2018b7eb452dd054e34))
+
+
+### Bug Fixes
+
+* Ensure tmux sessions spawn detached to avoid blocking ([5a98684](https://github.com/israelroldan/workon/commit/5a98684f535efac50cec1af011086adc957edd74))
+* Update tmux attach command to use -CC flag for compatibility with iTerm ([2d3d7c7](https://github.com/israelroldan/workon/commit/2d3d7c73fb164f1718908d276f91b8fba004f42d))
+
 ### [2.1.3](https://github.com/israelroldan/workon/compare/v2.1.2...v2.1.3) (2025-08-07)
 
 
