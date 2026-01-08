@@ -4,97 +4,123 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`workon` is a Node.js CLI tool for managing development projects and environments. It helps developers quickly switch between projects, configure IDEs, and manage git branches through an interactive interface.
+`workon` is a TypeScript CLI tool for managing development projects and environments. It helps developers quickly switch between projects, configure IDEs, manage git branches, and optionally create tmux sessions with Claude Code integration.
 
 ## Development Commands
 
-### Release Management
 ```bash
-npm run release              # Create a new release using standard-version
-```
-
-### Installation and Usage
-```bash
-npm install                  # Install dependencies
-node bin/workon             # Run the CLI tool directly
-npm link                    # Install globally for development
+pnpm install                # Install dependencies
+pnpm run dev                # Run CLI directly with tsx (development)
+pnpm run build              # Build with tsup
+pnpm run type-check         # TypeScript type checking
+pnpm run lint               # ESLint
+pnpm run lint:fix           # ESLint with auto-fix
+pnpm run format             # Prettier format
+pnpm run test               # Run tests with Vitest
+pnpm run test:coverage      # Run tests with coverage
+node bin/workon --debug     # Run built CLI with debug output
 ```
 
 ## Architecture
 
-### Core Components
+### Directory Structure
 
-**CLI Entry Point (`bin/workon`)**
-- Main executable that initializes logging and runs the CLI
-- Supports `--debug` flag for detailed logging
+```
+src/
+├── cli.ts                  # CLI entry point
+├── index.ts                # Library exports
+├── types/
+│   ├── index.ts            # Type definitions
+│   └── declarations.d.ts   # Declarations for untyped deps
+├── commands/               # Commander.js CLI commands
+│   ├── index.ts            # createCli() factory
+│   ├── open.ts             # Project opening, tmux layout orchestration
+│   ├── interactive.ts      # Interactive prompts for project setup
+│   ├── manage.ts           # Project management
+│   └── config/
+│       ├── index.ts        # Config subcommand container
+│       ├── list.ts
+│       ├── set.ts
+│       └── unset.ts
+├── events/                 # Event system (auto-discovered)
+│   ├── base.ts             # BaseEvent interface
+│   ├── registry.ts         # EventRegistry singleton
+│   ├── core/
+│   │   ├── cwd.ts          # Change directory
+│   │   ├── ide.ts          # Open IDE
+│   │   └── web.ts          # Open browser
+│   └── extensions/
+│       ├── claude.ts       # Claude Code integration
+│       ├── npm.ts          # NPM scripts
+│       └── docker.ts       # Docker compose
+└── lib/
+    ├── config.ts           # Conf wrapper with transient/persistent separation
+    ├── project.ts          # Project model class
+    ├── environment.ts      # Environment recognition system
+    └── tmux.ts             # Tmux session management
+tests/
+dist/                       # Built output (ESM + CJS)
+```
 
-**Command System (`cli/`)**
-- `cli/index.js`: Main CLI class extending switchit's container pattern
-- `cli/interactive.js`: Interactive mode for project setup and management
-- `cli/open.js`: Project opening and environment switching
-- `cli/config/`: Configuration management commands
+### Key Patterns
 
-**Project Management (`lib/`)**
-- `lib/project.js`: Project class with path, IDE, events, and branch properties
-- `lib/environment/`: Environment recognition and project detection
-- `lib/config.js`: Configuration storage using the `conf` package
+**Commander.js CLI**: Commands are factory functions that return `Command` instances. Subcommands use `.addCommand()`.
 
-### Key Architectural Patterns
+**Event Registry**: Events in `src/events/core/` and `src/events/extensions/` are auto-discovered. Each must export a class with static `metadata`, `validation`, `configuration`, and `processing` properties.
 
-**Environment Recognition**
-- Automatically detects if current directory is a configured project
-- Matches project paths against configuration
-- Integrates with git to detect current branch
-- Supports branch-specific project configurations (e.g., `project#branch`)
+**Shell Integration**: `workon --init` generates a shell function. When users run `workon projectName`, it calls `workon --shell projectName` and evals the output to execute in the current shell.
 
-**Configuration System**
-- Uses `conf` package for persistent storage
-- Separates transient properties (`pkg`, `work`) from persistent config
-- Stores project definitions and defaults
-- Configuration lives in user's config directory
+**Tmux Layouts**: `src/commands/open.ts` detects enabled events and creates appropriate tmux layouts:
+- `cwd + claude`: Two-pane (Claude left, terminal right)
+- `cwd + npm`: Two-pane (terminal left, npm right)
+- `cwd + claude + npm`: Three-pane layout
 
-**Interactive Flow**
-- Context-aware prompts based on current environment
-- Different options when inside vs outside project directories
-- Supports creating new projects, branches, and managing existing ones
+**Environment Recognition**: `src/lib/environment.ts` matches the current directory against configured projects and detects git branches. Branch-specific configs use `project#branch` naming.
 
-**Event System**
-- Projects can define events that trigger when opening:
-  - `cwd`: Change terminal directory to project path
-  - `ide`: Open project in configured IDE (VS Code, IntelliJ, Atom)
-  - `web`: Open project homepage in browser
-- Events are processed when switching to a project
+**Configuration**: Uses `conf` package. Transient keys (`pkg`, `work`) stay in memory; all others persist to disk.
+
+### Adding a New Event
+
+1. Create `src/events/extensions/yourevent.ts`
+2. Export a class with required static properties:
+   - `metadata`: `{ name, displayName, description, category, requiresTmux, dependencies }`
+   - `validation`: `{ validateConfig(config) }`
+   - `configuration`: `{ configureInteractive(), getDefaultConfig() }`
+   - `processing`: `{ processEvent(context), generateShellCommand(context) }`
+3. Optionally add `tmux` property for layout integration
 
 ### Project Configuration Structure
 
-Projects are stored with these properties:
-- `name`: Project identifier
-- `path`: Relative path from base directory
-- `ide`: IDE command (`vscode`, `idea`, `atom`)
-- `events`: Object defining which events to trigger
-- `branch`: Git branch (for branch-specific configs)
+```typescript
+{
+  project_defaults: { base: "~/code" },
+  projects: {
+    myproject: {
+      path: "myproject",      // Relative to base
+      ide: "vscode",          // vscode | idea | atom | code | subl | vim | emacs
+      events: {
+        cwd: true,
+        ide: true,
+        claude: { flags: ["--model", "opus"] },
+        npm: "dev"
+      }
+    }
+  }
+}
+```
 
-### Dependencies
+### Colon Syntax
 
-**Core Dependencies**
-- `switchit`: CLI framework for commands and arguments
-- `inquirer`: Interactive command-line prompts
-- `conf`: Configuration storage
-- `phylo`: File system utilities
-- `simple-git`: Git integration
-- `loog`: Logging system
+Users can run specific commands: `workon myproject:cwd,ide` or get help with `workon myproject:help`
 
-**Utility Dependencies**
-- `deep-assign`: Object merging
-- `flat`: Object flattening
-- `omelette`: Shell completion
-- `openurl2`: Browser opening
+## Technology Stack
 
-## Development Notes
-
-- The tool uses a class-based architecture with command inheritance
-- Configuration is automatically managed and persisted
-- Environment detection works by matching canonical paths
-- Interactive mode provides different UX based on context
-- Shell completion is supported via omelette
-- Git integration detects current branch for branch-specific configs
+- TypeScript 5.x with strict mode
+- Commander.js for CLI
+- @inquirer/prompts for interactive prompts
+- tsup for building (ESM + CJS)
+- Vitest for testing
+- ESLint 9 flat config + Prettier
+- Husky + lint-staged for git hooks
+- GitHub Actions for CI/CD
+- release-please for automated releases
