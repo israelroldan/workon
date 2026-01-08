@@ -1,12 +1,2 @@
 #!/usr/bin/env node
-const isDebug = !!process.argv.find(param => /-{1,2}de?b?u?g?\b/.test(param));
-const console = require('loog')({
-    prefixStyle: 'ascii',
-    logLevel: isDebug ? 'debug' : 'info'
-});
-
-const workon = require('../cli');
-new workon(console).run().catch(e => {
-    console.error(isDebug ? e.stack : (e.message ? e.message : e));
-    process.exit(1);
-});
+import '../dist/cli.js';
