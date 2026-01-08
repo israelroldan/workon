@@ -1,96 +1,42 @@
-import { readdirSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import type { EventHandler, EventMetadata } from '../types/index.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Explicit imports for all events (works with bundled builds)
+import { CwdEvent } from './core/cwd.js';
+import { IdeEvent } from './core/ide.js';
+import { WebEvent } from './core/web.js';
+import { ClaudeEvent } from './extensions/claude.js';
+import { DockerEvent } from './extensions/docker.js';
+import { NpmEvent } from './extensions/npm.js';
 
-// Detect if running from TypeScript source (tsx/ts-node) or compiled JS
-const isTypeScriptRuntime = __filename.endsWith('.ts');
+// All available event classes
+const ALL_EVENTS = [CwdEvent, IdeEvent, WebEvent, ClaudeEvent, DockerEvent, NpmEvent] as const;
 
 /**
- * Event Registry for auto-discovery and management of events
- * Scans the events directory and provides unified access to all events
+ * Event Registry for management of events
+ * Uses explicit imports to work with bundled builds
  */
 class EventRegistryClass {
   private _events = new Map<string, EventHandler>();
   private _initialized = false;
 
   /**
-   * Initialize the registry by discovering all events
+   * Initialize the registry by registering all events
    */
   async initialize(): Promise<void> {
     if (this._initialized) return;
 
-    await this.discoverEvents();
+    this.registerEvents();
     this._initialized = true;
   }
 
   /**
-   * Discover events from the events directory
+   * Register all event classes
    */
-  private async discoverEvents(): Promise<void> {
-    const eventsDir = __dirname;
-
-    // Discover core events
-    await this.discoverEventsInDirectory(join(eventsDir, 'core'));
-
-    // Discover extension events
-    await this.discoverEventsInDirectory(join(eventsDir, 'extensions'));
-  }
-
-  /**
-   * Find event file with either .ts or .js extension
-   */
-  private findEventFile(basePath: string): string | null {
-    // Try the detected runtime extension first, then fall back to the other
-    const extensions = isTypeScriptRuntime ? ['.ts', '.js'] : ['.js', '.ts'];
-
-    for (const ext of extensions) {
-      const filePath = basePath + ext;
-      if (existsSync(filePath)) {
-        return filePath;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Discover events in a specific directory
-   */
-  private async discoverEventsInDirectory(dir: string): Promise<void> {
-    if (!existsSync(dir)) return;
-
-    const entries = readdirSync(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      // Handle both directory-based (index.ts/js) and file-based events
-      let eventFile: string | null = null;
-
-      if (entry.isDirectory()) {
-        eventFile = this.findEventFile(join(dir, entry.name, 'index'));
-      } else if (entry.isFile()) {
-        const isSourceFile = entry.name.endsWith('.ts') || entry.name.endsWith('.js');
-        const isIndex = entry.name === 'index.ts' || entry.name === 'index.js';
-
-        if (isSourceFile && !isIndex) {
-          eventFile = join(dir, entry.name);
-        }
-      }
-
-      if (eventFile) {
-        try {
-          const module = await import(eventFile);
-          const EventClass = module.default || module[Object.keys(module)[0]];
-
-          if (this.isValidEvent(EventClass)) {
-            const metadata = EventClass.metadata as EventMetadata;
-            this._events.set(metadata.name, EventClass);
-          }
-        } catch (error) {
-          console.error(`Failed to load event from ${eventFile}:`, (error as Error).message);
-        }
+  private registerEvents(): void {
+    for (const EventClass of ALL_EVENTS) {
+      if (this.isValidEvent(EventClass)) {
+        const metadata = (EventClass as unknown as { metadata: EventMetadata }).metadata;
+        this._events.set(metadata.name, EventClass as unknown as EventHandler);
       }
     }
   }
@@ -117,7 +63,7 @@ class EventRegistryClass {
   }
 
   /**
-   * Get all valid event names from discovered events
+   * Get all valid event names from registered events
    */
   getValidEventNames(): string[] {
     this.ensureInitialized();
