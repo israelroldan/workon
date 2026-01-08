@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-## [2.0.0](https://github.com/israelroldan/workon/compare/v1.2.1...v2.0.0) (2026-01-08)
+## [3.0.0](https://github.com/israelroldan/workon/compare/v2.1.3...v3.0.0) (2026-01-08)
 
 
 ### ⚠ BREAKING CHANGES
