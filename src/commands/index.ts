@@ -10,6 +10,7 @@ import { EnvironmentRecognizer } from '../lib/environment.js';
 import { createOpenCommand } from './open.js';
 import { createConfigCommand } from './config/index.js';
 import { createManageCommand } from './manage.js';
+import { createAddCommand } from './add.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -107,6 +108,7 @@ export function createCli(): Command {
 
   // Add commands
   program.addCommand(createOpenCommand({ config, log }));
+  program.addCommand(createAddCommand({ config, log }));
   program.addCommand(createConfigCommand({ config, log }));
   program.addCommand(createManageCommand({ config, log }));
 
