@@ -200,42 +200,56 @@ function resolveCommandDependencies(
   return [...new Set(resolved)];
 }
 
-async function handleSplitTerminal(
+// Layout types for tmux session configurations
+type LayoutType = 'split-claude' | 'three-pane' | 'two-pane-npm';
+
+interface LayoutConfig {
+  type: LayoutType;
+  handledEvents: string[];
+  dryRunMessage: string;
+  claudeArgs: string[];
+  npmCommand: string | null;
+}
+
+function getClaudeArgs(project: Project): string[] {
+  const claudeConfig = project.events.claude as ClaudeConfig | boolean;
+  return typeof claudeConfig === 'object' && claudeConfig.flags ? claudeConfig.flags : [];
+}
+
+async function getNpmCommand(project: Project): Promise<string> {
+  const npmConfig = project.events.npm as NpmConfig | string | boolean;
+  const { NpmEvent } = await import('../events/extensions/npm.js');
+  return NpmEvent.getNpmCommand(npmConfig);
+}
+
+async function handleTmuxLayout(
   project: Project,
-  isShellMode: boolean,
-  dryRun: boolean,
+  layout: LayoutConfig,
+  options: { isShellMode: boolean; dryRun: boolean },
   shellCommands: string[],
   events: string[],
   ctx: OpenContext
 ): Promise<void> {
   const { log } = ctx;
   const tmux = new TmuxManager();
-  const claudeConfig = project.events.claude as ClaudeConfig | boolean;
-  const claudeArgs =
-    typeof claudeConfig === 'object' && claudeConfig.flags ? claudeConfig.flags : [];
+  const { isShellMode, dryRun } = options;
 
   let tmuxHandled = false;
 
   if (isShellMode) {
     if (await tmux.isTmuxAvailable()) {
-      const commands = tmux.buildShellCommands(project.name, project.path.path, claudeArgs);
+      const commands = buildLayoutShellCommands(tmux, project, layout);
       shellCommands.push(...commands);
       tmuxHandled = true;
     } else {
       log.debug('Tmux not available, falling back to normal mode');
-      shellCommands.push(`cd "${project.path.path}"`);
-      const claudeCommand = claudeArgs.length > 0 ? `claude ${claudeArgs.join(' ')}` : 'claude';
-      shellCommands.push(claudeCommand);
+      buildFallbackCommands(shellCommands, project, layout);
       tmuxHandled = true;
     }
   } else if (!dryRun) {
     if (await tmux.isTmuxAvailable()) {
       try {
-        const sessionName = await tmux.createSplitSession(
-          project.name,
-          project.path.path,
-          claudeArgs
-        );
+        const sessionName = await createTmuxSession(tmux, project, layout);
         await tmux.attachToSession(sessionName);
         tmuxHandled = true;
       } catch (error) {
@@ -245,24 +259,99 @@ async function handleSplitTerminal(
       log.debug('Tmux not available, falling back to normal event processing');
     }
   } else {
-    // Dry run - skip tmux but mark as handled to avoid fallback execution
-    log.info(`Would create split tmux session '${project.name}' with Claude`);
+    log.info(layout.dryRunMessage);
     tmuxHandled = true;
   }
 
-  // If tmux didn't handle cwd/claude, process them normally
+  // If tmux didn't handle layout events, process them normally
   if (!tmuxHandled && !dryRun) {
-    for (const event of events.filter((e) => ['cwd', 'claude'].includes(e))) {
+    for (const event of events.filter((e) => layout.handledEvents.includes(e))) {
       await processEvent(event, { project, isShellMode, shellCommands }, ctx);
     }
   }
 
-  // Process other events
+  // Process other events not handled by the layout
   if (!dryRun) {
-    for (const event of events.filter((e) => !['cwd', 'claude'].includes(e))) {
+    for (const event of events.filter((e) => !layout.handledEvents.includes(e))) {
       await processEvent(event, { project, isShellMode, shellCommands }, ctx);
     }
   }
+}
+
+function buildLayoutShellCommands(
+  tmux: TmuxManager,
+  project: Project,
+  layout: LayoutConfig
+): string[] {
+  switch (layout.type) {
+    case 'split-claude':
+      return tmux.buildShellCommands(project.name, project.path.path, layout.claudeArgs);
+    case 'three-pane':
+      return tmux.buildThreePaneShellCommands(
+        project.name,
+        project.path.path,
+        layout.claudeArgs,
+        layout.npmCommand!
+      );
+    case 'two-pane-npm':
+      return tmux.buildTwoPaneNpmShellCommands(project.name, project.path.path, layout.npmCommand!);
+  }
+}
+
+function buildFallbackCommands(
+  shellCommands: string[],
+  project: Project,
+  layout: LayoutConfig
+): void {
+  shellCommands.push(`cd "${project.path.path}"`);
+
+  if (layout.type === 'split-claude' || layout.type === 'three-pane') {
+    const claudeCommand =
+      layout.claudeArgs.length > 0 ? `claude ${layout.claudeArgs.join(' ')}` : 'claude';
+    shellCommands.push(claudeCommand);
+  }
+
+  if (layout.npmCommand) {
+    shellCommands.push(layout.npmCommand);
+  }
+}
+
+async function createTmuxSession(
+  tmux: TmuxManager,
+  project: Project,
+  layout: LayoutConfig
+): Promise<string> {
+  switch (layout.type) {
+    case 'split-claude':
+      return tmux.createSplitSession(project.name, project.path.path, layout.claudeArgs);
+    case 'three-pane':
+      return tmux.createThreePaneSession(
+        project.name,
+        project.path.path,
+        layout.claudeArgs,
+        layout.npmCommand!
+      );
+    case 'two-pane-npm':
+      return tmux.createTwoPaneNpmSession(project.name, project.path.path, layout.npmCommand!);
+  }
+}
+
+async function handleSplitTerminal(
+  project: Project,
+  isShellMode: boolean,
+  dryRun: boolean,
+  shellCommands: string[],
+  events: string[],
+  ctx: OpenContext
+): Promise<void> {
+  const layout: LayoutConfig = {
+    type: 'split-claude',
+    handledEvents: ['cwd', 'claude'],
+    dryRunMessage: `Would create split tmux session '${project.name}' with Claude`,
+    claudeArgs: getClaudeArgs(project),
+    npmCommand: null,
+  };
+  await handleTmuxLayout(project, layout, { isShellMode, dryRun }, shellCommands, events, ctx);
 }
 
 async function handleThreePaneLayout(
@@ -273,70 +362,14 @@ async function handleThreePaneLayout(
   events: string[],
   ctx: OpenContext
 ): Promise<void> {
-  const { log } = ctx;
-  const tmux = new TmuxManager();
-  const claudeConfig = project.events.claude as ClaudeConfig | boolean;
-  const claudeArgs =
-    typeof claudeConfig === 'object' && claudeConfig.flags ? claudeConfig.flags : [];
-  const npmConfig = project.events.npm as NpmConfig | string | boolean;
-  const { NpmEvent } = await import('../events/extensions/npm.js');
-  const npmCommand = NpmEvent.getNpmCommand(npmConfig);
-
-  let tmuxHandled = false;
-
-  if (isShellMode) {
-    if (await tmux.isTmuxAvailable()) {
-      const commands = tmux.buildThreePaneShellCommands(
-        project.name,
-        project.path.path,
-        claudeArgs,
-        npmCommand
-      );
-      shellCommands.push(...commands);
-      tmuxHandled = true;
-    } else {
-      log.debug('Tmux not available, falling back to normal mode');
-      shellCommands.push(`cd "${project.path.path}"`);
-      shellCommands.push(claudeArgs.length > 0 ? `claude ${claudeArgs.join(' ')}` : 'claude');
-      shellCommands.push(npmCommand);
-      tmuxHandled = true;
-    }
-  } else if (!dryRun) {
-    if (await tmux.isTmuxAvailable()) {
-      try {
-        const sessionName = await tmux.createThreePaneSession(
-          project.name,
-          project.path.path,
-          claudeArgs,
-          npmCommand
-        );
-        await tmux.attachToSession(sessionName);
-        tmuxHandled = true;
-      } catch (error) {
-        log.debug(`Failed to create tmux session: ${(error as Error).message}`);
-      }
-    } else {
-      log.debug('Tmux not available, falling back to normal event processing');
-    }
-  } else {
-    // Dry run - skip tmux but mark as handled to avoid fallback execution
-    log.info(`Would create three-pane tmux session '${project.name}' with Claude and NPM`);
-    tmuxHandled = true;
-  }
-
-  // If tmux didn't handle cwd/claude/npm, process them normally
-  if (!tmuxHandled && !dryRun) {
-    for (const event of events.filter((e) => ['cwd', 'claude', 'npm'].includes(e))) {
-      await processEvent(event, { project, isShellMode, shellCommands }, ctx);
-    }
-  }
-
-  // Process other events
-  if (!dryRun) {
-    for (const event of events.filter((e) => !['cwd', 'claude', 'npm'].includes(e))) {
-      await processEvent(event, { project, isShellMode, shellCommands }, ctx);
-    }
-  }
+  const layout: LayoutConfig = {
+    type: 'three-pane',
+    handledEvents: ['cwd', 'claude', 'npm'],
+    dryRunMessage: `Would create three-pane tmux session '${project.name}' with Claude and NPM`,
+    claudeArgs: getClaudeArgs(project),
+    npmCommand: await getNpmCommand(project),
+  };
+  await handleTmuxLayout(project, layout, { isShellMode, dryRun }, shellCommands, events, ctx);
 }
 
 async function handleTwoPaneNpmLayout(
@@ -347,64 +380,14 @@ async function handleTwoPaneNpmLayout(
   events: string[],
   ctx: OpenContext
 ): Promise<void> {
-  const { log } = ctx;
-  const tmux = new TmuxManager();
-  const npmConfig = project.events.npm as NpmConfig | string | boolean;
-  const { NpmEvent } = await import('../events/extensions/npm.js');
-  const npmCommand = NpmEvent.getNpmCommand(npmConfig);
-
-  let tmuxHandled = false;
-
-  if (isShellMode) {
-    if (await tmux.isTmuxAvailable()) {
-      const commands = tmux.buildTwoPaneNpmShellCommands(
-        project.name,
-        project.path.path,
-        npmCommand
-      );
-      shellCommands.push(...commands);
-      tmuxHandled = true;
-    } else {
-      log.debug('Tmux not available, falling back to normal mode');
-      shellCommands.push(`cd "${project.path.path}"`);
-      shellCommands.push(npmCommand);
-      tmuxHandled = true;
-    }
-  } else if (!dryRun) {
-    if (await tmux.isTmuxAvailable()) {
-      try {
-        const sessionName = await tmux.createTwoPaneNpmSession(
-          project.name,
-          project.path.path,
-          npmCommand
-        );
-        await tmux.attachToSession(sessionName);
-        tmuxHandled = true;
-      } catch (error) {
-        log.debug(`Failed to create tmux session: ${(error as Error).message}`);
-      }
-    } else {
-      log.debug('Tmux not available, falling back to normal event processing');
-    }
-  } else {
-    // Dry run - skip tmux but mark as handled to avoid fallback execution
-    log.info(`Would create two-pane tmux session '${project.name}' with NPM`);
-    tmuxHandled = true;
-  }
-
-  // If tmux didn't handle cwd/npm, process them normally
-  if (!tmuxHandled && !dryRun) {
-    for (const event of events.filter((e) => ['cwd', 'npm'].includes(e))) {
-      await processEvent(event, { project, isShellMode, shellCommands }, ctx);
-    }
-  }
-
-  // Process other events
-  if (!dryRun) {
-    for (const event of events.filter((e) => !['cwd', 'npm'].includes(e))) {
-      await processEvent(event, { project, isShellMode, shellCommands }, ctx);
-    }
-  }
+  const layout: LayoutConfig = {
+    type: 'two-pane-npm',
+    handledEvents: ['cwd', 'npm'],
+    dryRunMessage: `Would create two-pane tmux session '${project.name}' with NPM`,
+    claudeArgs: [],
+    npmCommand: await getNpmCommand(project),
+  };
+  await handleTmuxLayout(project, layout, { isShellMode, dryRun }, shellCommands, events, ctx);
 }
 
 async function processEvent(
