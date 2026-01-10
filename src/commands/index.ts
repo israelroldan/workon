@@ -64,6 +64,7 @@ export function createCli(): Command {
     .name('workon')
     .description('Work on something great!')
     .version(packageJson.version)
+    .argument('[project]', 'Project name to open (supports project:command syntax)')
     .option('-d, --debug', 'Enable debug logging')
     .option('--completion', 'Setup shell tab completion')
     .option('--shell', 'Output shell commands for evaluation')
@@ -74,33 +75,47 @@ export function createCli(): Command {
         log.setLogLevel('debug');
       }
     })
-    .action(async (options: GlobalOptions & { completion?: boolean; init?: boolean }) => {
-      if (options.debug) {
-        log.setLogLevel('debug');
+    .action(
+      async (
+        project: string | undefined,
+        options: GlobalOptions & { completion?: boolean; init?: boolean }
+      ) => {
+        if (options.debug) {
+          log.setLogLevel('debug');
+        }
+
+        if (options.completion) {
+          log.debug('Setting up command-line completion');
+          completion.setupShellInitFile();
+          return;
+        }
+
+        if (options.init) {
+          log.debug('Generating shell integration function');
+          outputShellInit(program);
+          return;
+        }
+
+        // If a project name was provided, delegate to the open command
+        if (project) {
+          const args = ['open', project];
+          if (options.shell) args.push('--shell');
+          if (options.debug) args.push('--debug');
+          await program.parseAsync(['node', 'workon', ...args]);
+          return;
+        }
+
+        // Default action: run interactive mode
+        const environment = await EnvironmentRecognizer.recognize(File.cwd());
+        program.setOptionValue('_environment', environment);
+        program.setOptionValue('_config', config);
+        program.setOptionValue('_log', log);
+
+        // Import and run interactive command
+        const { runInteractive } = await import('./interactive.js');
+        await runInteractive({ config, log, environment });
       }
-
-      if (options.completion) {
-        log.debug('Setting up command-line completion');
-        completion.setupShellInitFile();
-        return;
-      }
-
-      if (options.init) {
-        log.debug('Generating shell integration function');
-        outputShellInit(program);
-        return;
-      }
-
-      // Default action: run interactive mode or show help
-      const environment = await EnvironmentRecognizer.recognize(File.cwd());
-      program.setOptionValue('_environment', environment);
-      program.setOptionValue('_config', config);
-      program.setOptionValue('_log', log);
-
-      // Import and run interactive command
-      const { runInteractive } = await import('./interactive.js');
-      await runInteractive({ config, log, environment });
-    });
+    );
 
   // Store shared state for subcommands
   program.setOptionValue('_config', config);
