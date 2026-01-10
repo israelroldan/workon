@@ -2,10 +2,11 @@ import { select, input, checkbox, confirm } from '@inquirer/prompts';
 import File from 'phylo';
 import deepAssign from 'deep-assign';
 import type { Config } from '../lib/config.js';
-import type { Logger, ProjectConfig, EventsConfig, IdeType } from '../types/index.js';
+import type { Logger, ProjectConfig, EventsConfig } from '../types/index.js';
 import type { Environment, ProjectEnvironment as ProjectEnv } from '../lib/environment.js';
 import { ProjectEnvironment } from '../lib/environment.js';
 import { EventRegistry } from '../events/registry.js';
+import { IDE_CHOICES } from '../types/constants.js';
 
 interface InteractiveContext {
   config: Config;
@@ -13,12 +14,6 @@ interface InteractiveContext {
   environment: Environment;
   suggestedName?: string;
 }
-
-const IDE_CHOICES = [
-  { name: 'Visual Studio Code', value: 'vscode' as IdeType },
-  { name: 'IntelliJ IDEA', value: 'idea' as IdeType },
-  { name: 'Atom', value: 'atom' as IdeType },
-];
 
 export async function runInteractive(ctx: InteractiveContext): Promise<void> {
   const { config, log, environment, suggestedName } = ctx;
