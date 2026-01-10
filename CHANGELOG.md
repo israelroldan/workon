@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.2.0](https://github.com/israelroldan/workon/compare/v3.1.0...v3.2.0) (2026-01-10)
+
+
+### Features
+
+* add comprehensive test infrastructure and coverage ([#9](https://github.com/israelroldan/workon/issues/9)) ([2067d3f](https://github.com/israelroldan/workon/commit/2067d3f36dba870ec9d6ebe95a34b8cb2ae350ad))
+
+
+### Bug Fixes
+
+* add CLI project argument support and implement interactive features ([#11](https://github.com/israelroldan/workon/issues/11)) ([f16de59](https://github.com/israelroldan/workon/commit/f16de591db11bf01c0030f74df5faaf781e4ce72))
+
 ## [3.1.0](https://github.com/israelroldan/workon/compare/v3.0.0...v3.1.0) (2026-01-08)
 
 
