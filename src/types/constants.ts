@@ -5,6 +5,7 @@ import type { IdeType } from './index.js';
  * Shared between interactive.ts and manage.ts.
  */
 export const IDE_CHOICES = [
+  { name: 'Cursor', value: 'cursor' as IdeType },
   { name: 'Visual Studio Code', value: 'vscode' as IdeType },
   { name: 'Visual Studio Code (code)', value: 'code' as IdeType },
   { name: 'IntelliJ IDEA', value: 'idea' as IdeType },

@@ -74,7 +74,7 @@ describe('CwdEvent', () => {
   });
 
   describe('processing', () => {
-    it('should generate cd shell command', () => {
+    it('should generate pushd shell command', () => {
       const mockProject = {
         path: { path: '/path/to/project' },
         events: { cwd: true },
@@ -87,7 +87,7 @@ describe('CwdEvent', () => {
       } as unknown as Parameters<typeof CwdEvent.processing.generateShellCommand>[0];
 
       const commands = CwdEvent.processing.generateShellCommand(context);
-      expect(commands).toEqual(['cd "/path/to/project"']);
+      expect(commands).toEqual(['pushd "/path/to/project" > /dev/null']);
     });
 
     it('should handle paths with spaces', () => {
@@ -103,7 +103,7 @@ describe('CwdEvent', () => {
       } as unknown as Parameters<typeof CwdEvent.processing.generateShellCommand>[0];
 
       const commands = CwdEvent.processing.generateShellCommand(context);
-      expect(commands).toEqual(['cd "/path/with spaces/project"']);
+      expect(commands).toEqual(['pushd "/path/with spaces/project" > /dev/null']);
     });
   });
 

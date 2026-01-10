@@ -49,19 +49,26 @@ export class CwdEvent {
         const projectPath = project.path.path;
 
         if (isShellMode) {
-          shellCommands.push(`cd "${projectPath}"`);
+          // Use pushd so user can popd to go back
+          shellCommands.push(`pushd "${projectPath}" > /dev/null`);
         } else {
-          // Spawn a new shell in the project directory
+          // Spawn a new interactive shell in the project directory and wait for it
           const shell = process.env.SHELL || '/bin/bash';
-          spawn(shell, [], {
+          const child = spawn(shell, ['-i'], {
             cwd: projectPath,
             stdio: 'inherit',
+          });
+
+          // Wait for the shell to exit
+          await new Promise<void>((resolve, reject) => {
+            child.on('close', () => resolve());
+            child.on('error', (err) => reject(err));
           });
         }
       },
       generateShellCommand(context: EventProcessingContext): string[] {
         const projectPath = context.project.path.path;
-        return [`cd "${projectPath}"`];
+        return [`pushd "${projectPath}" > /dev/null`];
       },
     };
   }

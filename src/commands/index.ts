@@ -65,6 +65,7 @@ export function createCli(): Command {
     .name('workon')
     .description('Work on something great!')
     .version(packageJson.version)
+    .enablePositionalOptions()
     .argument('[project]', 'Project name to open (supports project:command syntax)')
     .option('-d, --debug', 'Enable debug logging')
     .option('--completion', 'Setup shell tab completion')
@@ -99,12 +100,11 @@ export function createCli(): Command {
           return;
         }
 
-        // If a project name was provided, delegate to the open command
+        // If a project name was provided, delegate to the open command logic
         if (project) {
-          const args = ['open', project];
-          if (options.shell) args.push('--shell');
-          if (options.debug) args.push('--debug');
-          await program.parseAsync(['node', 'workon', ...args]);
+          // Import and call open logic directly instead of re-parsing
+          const { runOpen } = await import('./open.js');
+          await runOpen(project, { debug: options.debug, shell: options.shell }, { config, log });
           return;
         }
 

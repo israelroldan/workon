@@ -23,6 +23,23 @@ interface OpenOptions {
   shell?: boolean;
 }
 
+/**
+ * Run the open command logic directly (used when delegating from main CLI)
+ */
+export async function runOpen(
+  projectArg: string,
+  options: OpenOptions,
+  ctx: OpenContext
+): Promise<void> {
+  const { log } = ctx;
+
+  if (options.debug) {
+    log.setLogLevel('debug');
+  }
+
+  await processProject(projectArg, options, ctx);
+}
+
 export function createOpenCommand(ctx: OpenContext): Command {
   const { config, log } = ctx;
 
@@ -235,12 +252,31 @@ async function handleTmuxLayout(
 
   if (isShellMode) {
     if (await tmux.isTmuxAvailable()) {
+      // Process remaining events (like IDE) FIRST, before any tmux commands
+      // This prevents backgrounded commands from interfering with tmux -CC control mode
+      const remainingEvents = events.filter((e) => !layout.handledEvents.includes(e));
+      for (const event of remainingEvents) {
+        const eventHandler = EventRegistry.getEventByName(event);
+        if (eventHandler) {
+          const cmds = eventHandler.processing.generateShellCommand({
+            project,
+            isShellMode: true,
+            shellCommands: [],
+          });
+          shellCommands.push(...cmds);
+        }
+      }
+
+      // Now add all tmux commands (create session, split panes, attach)
       const commands = buildLayoutShellCommands(tmux, project, layout);
       shellCommands.push(...commands);
       tmuxHandled = true;
     } else {
       log.debug('Tmux not available, falling back to normal mode');
-      buildFallbackCommands(shellCommands, project, layout);
+      // Process remaining non-blocking events (like IDE) BEFORE npm in fallback mode
+      // This ensures IDE opens before npm blocks
+      const remainingEvents = events.filter((e) => !layout.handledEvents.includes(e));
+      buildFallbackCommandsWithEvents(shellCommands, project, layout, remainingEvents, ctx);
       tmuxHandled = true;
     }
   } else if (!dryRun) {
@@ -268,7 +304,8 @@ async function handleTmuxLayout(
   }
 
   // Process other events not handled by the layout
-  if (!dryRun) {
+  // Skip in shell mode (events already handled inline above)
+  if (!dryRun && !isShellMode) {
     for (const event of events.filter((e) => !layout.handledEvents.includes(e))) {
       await processEvent(event, { project, isShellMode, shellCommands }, ctx);
     }
@@ -295,22 +332,33 @@ function buildLayoutShellCommands(
   }
 }
 
-function buildFallbackCommands(
+function buildFallbackCommandsWithEvents(
   shellCommands: string[],
   project: Project,
-  layout: LayoutConfig
+  layout: LayoutConfig,
+  remainingEvents: string[],
+  _ctx: OpenContext
 ): void {
-  shellCommands.push(`cd "${project.path.path}"`);
+  // Warn user that tmux is not available
+  shellCommands.push(`echo "⚠ tmux not available - install with: brew install tmux" >&2`);
 
-  if (layout.type === 'split-claude' || layout.type === 'three-pane') {
-    const claudeCommand =
-      layout.claudeArgs.length > 0 ? `claude ${layout.claudeArgs.join(' ')}` : 'claude';
-    shellCommands.push(claudeCommand);
+  // Use pushd so user can popd to go back
+  shellCommands.push(`pushd "${project.path.path}" > /dev/null`);
+
+  // Add non-blocking remaining events (like IDE)
+  for (const event of remainingEvents) {
+    const eventHandler = EventRegistry.getEventByName(event);
+    if (eventHandler) {
+      const cmds = eventHandler.processing.generateShellCommand({
+        project,
+        isShellMode: true,
+        shellCommands: [],
+      });
+      shellCommands.push(...cmds);
+    }
   }
 
-  if (layout.npmCommand) {
-    shellCommands.push(layout.npmCommand);
-  }
+  // Skip blocking commands (npm, claude) - they require tmux for proper UX
 }
 
 async function createTmuxSession(

@@ -22,6 +22,7 @@ interface ProjectDiscovery {
   name: string;
   isNode: boolean;
   isBun: boolean;
+  hasClaude: boolean;
   detectedIde: IdeType | null;
   packageJson: Record<string, unknown> | null;
 }
@@ -104,7 +105,7 @@ async function addProject(pathArg: string, options: AddOptions, ctx: AddContext)
   }
 
   // Determine IDE
-  const ide: IdeType = options.ide || discovery.detectedIde || 'vscode';
+  const ide: IdeType = options.ide || discovery.detectedIde || 'code';
   log.debug(`IDE: ${ide}`);
 
   // Calculate relative path if possible
@@ -140,6 +141,11 @@ async function addProject(pathArg: string, options: AddOptions, ctx: AddContext)
     }
   }
 
+  // Add claude event if CLAUDE.md is detected
+  if (discovery.hasClaude) {
+    projectConfig.events.claude = true;
+  }
+
   // Save the project
   config.setProject(projectName, projectConfig);
 
@@ -159,6 +165,7 @@ function discoverProject(targetPath: string, log: Logger): ProjectDiscovery {
     name: dirName,
     isNode: false,
     isBun: false,
+    hasClaude: false,
     detectedIde: null,
     packageJson: null,
   };
@@ -193,14 +200,25 @@ function discoverProject(targetPath: string, log: Logger): ProjectDiscovery {
 
   // Detect IDE from config directories
   const vscodeDir = resolve(targetPath, '.vscode');
+  const cursorDir = resolve(targetPath, '.cursor');
   const ideaDir = resolve(targetPath, '.idea');
 
-  if (existsSync(vscodeDir)) {
-    discovery.detectedIde = 'vscode';
+  if (existsSync(cursorDir)) {
+    discovery.detectedIde = 'cursor';
+    log.debug('Detected Cursor (.cursor directory found)');
+  } else if (existsSync(vscodeDir)) {
+    discovery.detectedIde = 'code';
     log.debug('Detected VS Code (.vscode directory found)');
   } else if (existsSync(ideaDir)) {
     discovery.detectedIde = 'idea';
     log.debug('Detected IntelliJ IDEA (.idea directory found)');
+  }
+
+  // Detect Claude Code project
+  const claudeMdPath = resolve(targetPath, 'CLAUDE.md');
+  if (existsSync(claudeMdPath)) {
+    discovery.hasClaude = true;
+    log.debug('Detected Claude Code project (CLAUDE.md found)');
   }
 
   return discovery;

@@ -82,7 +82,8 @@ describe('IdeEvent', () => {
       } as unknown as Parameters<typeof IdeEvent.processing.generateShellCommand>[0];
 
       const commands = IdeEvent.processing.generateShellCommand(context);
-      expect(commands).toEqual(['code "/path/to/project" &']);
+      // Disable job monitoring to suppress job control output for tmux -CC compatibility
+      expect(commands).toEqual(['set +m; code "/path/to/project" &>/dev/null &']);
     });
 
     it('should use configured ide', () => {
@@ -99,7 +100,7 @@ describe('IdeEvent', () => {
       } as unknown as Parameters<typeof IdeEvent.processing.generateShellCommand>[0];
 
       const commands = IdeEvent.processing.generateShellCommand(context);
-      expect(commands).toEqual(['idea "/path/to/project" &']);
+      expect(commands).toEqual(['set +m; idea "/path/to/project" &>/dev/null &']);
     });
 
     it('should handle paths with spaces', () => {
@@ -115,7 +116,7 @@ describe('IdeEvent', () => {
       } as unknown as Parameters<typeof IdeEvent.processing.generateShellCommand>[0];
 
       const commands = IdeEvent.processing.generateShellCommand(context);
-      expect(commands).toEqual(['code "/path/with spaces/project" &']);
+      expect(commands).toEqual(['set +m; code "/path/with spaces/project" &>/dev/null &']);
     });
   });
 
