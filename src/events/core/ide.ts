@@ -50,7 +50,9 @@ export class IdeEvent {
         const ide = project.ide || 'code';
 
         if (isShellMode) {
-          shellCommands.push(`${ide} "${projectPath}" &`);
+          // Disable job monitoring to suppress [n] pid and done messages
+          // that interfere with tmux -CC control mode
+          shellCommands.push(`set +m; ${ide} "${projectPath}" &>/dev/null &`);
         } else {
           spawn(ide, [projectPath], {
             detached: true,
@@ -61,7 +63,9 @@ export class IdeEvent {
       generateShellCommand(context: EventProcessingContext): string[] {
         const projectPath = context.project.path.path;
         const ide = context.project.ide || 'code';
-        return [`${ide} "${projectPath}" &`];
+        // Disable job monitoring to suppress [n] pid and done messages
+        // that interfere with tmux -CC control mode
+        return [`set +m; ${ide} "${projectPath}" &>/dev/null &`];
       },
     };
   }

@@ -1,6 +1,6 @@
 // Project configuration types
 
-export type IdeType = 'vscode' | 'idea' | 'atom' | 'code' | 'subl' | 'vim' | 'emacs';
+export type IdeType = 'vscode' | 'idea' | 'atom' | 'code' | 'subl' | 'vim' | 'emacs' | 'cursor';
 
 export interface ClaudeConfig {
   flags?: string[];

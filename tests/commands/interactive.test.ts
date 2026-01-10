@@ -28,7 +28,15 @@ vi.mock('../../src/lib/tmux.js', () => ({
 
 // Mock child_process to avoid actual spawns
 vi.mock('child_process', () => ({
-  spawn: vi.fn(() => ({ unref: vi.fn() })),
+  spawn: vi.fn(() => ({
+    unref: vi.fn(),
+    on: vi.fn((event: string, callback: () => void) => {
+      // Immediately call close callback to simulate shell exit
+      if (event === 'close') {
+        setTimeout(() => callback(), 0);
+      }
+    }),
+  })),
 }));
 
 // Import after mocking
@@ -242,6 +250,15 @@ describe('switch-project flow', () => {
 
   beforeEach(() => {
     config = new Config();
+    // Clear all existing projects for clean test state
+    const existingProjects = Object.keys(config.getProjects());
+    existingProjects.forEach((name) => {
+      try {
+        config.deleteProject(name);
+      } catch {
+        // Ignore errors
+      }
+    });
     mockLog = {
       debug: vi.fn(),
       info: vi.fn(),

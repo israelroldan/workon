@@ -437,6 +437,6 @@ describe('shell mode', () => {
     // Should have output shell commands
     expect(consoleSpy).toHaveBeenCalled();
     const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
-    expect(output).toContain('cd');
+    expect(output).toContain('pushd');
   });
 });
