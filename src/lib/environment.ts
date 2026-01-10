@@ -77,8 +77,8 @@ export class EnvironmentRecognizer {
         const git = simpleGit(gitDir.path);
         const branchSummary = await git.branchLocal();
         (base as ProjectWithPath & { branch?: string }).branch = branchSummary.current;
-      } catch {
-        // Git not available or not a git repo
+      } catch (error) {
+        this.log.debug(`Git branch detection failed: ${(error as Error).message}`);
       }
     }
 
