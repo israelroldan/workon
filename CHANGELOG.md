@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.2.3](https://github.com/israelroldan/workon/compare/v3.2.2...v3.2.3) (2026-01-10)
+
+
+### Bug Fixes
+
+* prevent config from being cleared by race conditions and tests ([#22](https://github.com/israelroldan/workon/issues/22)) ([520da78](https://github.com/israelroldan/workon/commit/520da78f3683518a46492967f9ad963a635bf006))
+
 ## [3.2.2](https://github.com/israelroldan/workon/compare/v3.2.1...v3.2.2) (2026-01-10)
 
 
