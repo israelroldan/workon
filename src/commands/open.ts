@@ -400,10 +400,17 @@ async function processEvent(
   log.debug(`Processing event ${event}`);
 
   const eventHandler = EventRegistry.getEventByName(event);
-  if (eventHandler) {
-    await eventHandler.processing.processEvent(context);
-  } else {
+  if (!eventHandler) {
     log.debug(`No event handler found for: ${event}`);
+    return;
+  }
+
+  try {
+    await eventHandler.processing.processEvent(context);
+  } catch (error) {
+    log.error(`Failed to process event '${event}': ${(error as Error).message}`);
+    log.debug(`Event error stack: ${(error as Error).stack}`);
+    // Continue processing other events rather than stopping completely
   }
 }
 
