@@ -307,9 +307,6 @@ async function switchBranch(projectName: string, ctx: InteractiveContext): Promi
 async function manageProjects(ctx: InteractiveContext): Promise<void> {
   const { config } = ctx;
 
-  // Initialize event registry for manage operations
-  await EventRegistry.initialize();
-
   const projects = config.getProjects();
   const hasProjects = Object.keys(projects).length > 0;
 
@@ -405,9 +402,6 @@ async function openProject(projectName: string, ctx: InteractiveContext): Promis
     log.error(`Project '${projectName}' not found.`);
     return;
   }
-
-  // Initialize event registry if needed
-  await EventRegistry.initialize();
 
   const projectConfig = projects[projectName];
   const projectCfg = { ...projectConfig, name: projectName };

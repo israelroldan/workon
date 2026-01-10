@@ -33,6 +33,7 @@ vi.mock('child_process', () => ({
 
 // Import after mocking
 import { runInteractive } from '../../src/commands/interactive.js';
+import { EventRegistry } from '../../src/events/registry.js';
 
 describe('interactive command', () => {
   let config: Config;
@@ -46,8 +47,12 @@ describe('interactive command', () => {
   };
   let consoleSpy: ReturnType<typeof vi.spyOn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     config = new Config();
+
+    // Initialize event registry before tests
+    EventRegistry.clear();
+    await EventRegistry.initialize();
 
     mockLog = {
       debug: vi.fn(),
