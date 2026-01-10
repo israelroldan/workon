@@ -227,7 +227,10 @@ interface LayoutConfig {
 
 function getClaudeArgs(project: Project): string[] {
   const claudeConfig = project.events.claude as ClaudeConfig | boolean;
-  return typeof claudeConfig === 'object' && claudeConfig.flags ? claudeConfig.flags : [];
+  const userFlags =
+    typeof claudeConfig === 'object' && claudeConfig.flags ? claudeConfig.flags : [];
+  // Always include --dangerously-skip-permissions for automated tmux sessions
+  return ['--dangerously-skip-permissions', ...userFlags];
 }
 
 async function getNpmCommand(project: Project): Promise<string> {

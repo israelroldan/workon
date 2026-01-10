@@ -219,8 +219,7 @@ async function initProject(
     events,
   };
 
-  projects[name] = projectConfig;
-  config.set('projects', projects);
+  await config.setProjectSafe(name, projectConfig);
 
   log.info('Your project has been initialized.');
   log.info(`Use 'workon ${name}' to start working!`);
@@ -249,8 +248,7 @@ async function initBranch(defaultName: string, ctx: InteractiveContext): Promise
   }) as ProjectConfig;
   const branchConfig: ProjectConfig = mergedConfig;
 
-  projects[branchName] = branchConfig;
-  config.set('projects', projects);
+  await config.setProjectSafe(branchName, branchConfig);
 
   log.info('Your branch configuration has been initialized.');
   log.info(`Use 'workon ${branchName}' to start working!`);
@@ -498,7 +496,7 @@ async function createProjectManage(ctx: InteractiveContext): Promise<void> {
   });
 
   if (confirmed) {
-    config.setProject(name, projectConfig);
+    await config.setProjectSafe(name, projectConfig);
     log.info(`Project '${name}' created successfully!`);
   }
 }
@@ -593,7 +591,7 @@ async function editProjectManage(ctx: InteractiveContext): Promise<void> {
   });
 
   if (confirmed) {
-    config.setProject(name, updatedConfig);
+    await config.setProjectSafe(name, updatedConfig);
     log.info(`Project '${name}' updated successfully!`);
   }
 }
@@ -628,7 +626,7 @@ async function deleteProjectManage(ctx: InteractiveContext): Promise<void> {
 
     if (deleteAll) {
       for (const branch of branches) {
-        config.deleteProject(branch);
+        await config.deleteProjectSafe(branch);
       }
     }
   }
@@ -639,7 +637,7 @@ async function deleteProjectManage(ctx: InteractiveContext): Promise<void> {
   });
 
   if (confirmed) {
-    config.deleteProject(name);
+    await config.deleteProjectSafe(name);
     log.info(`Project '${name}' deleted.`);
   }
 }
@@ -742,7 +740,7 @@ async function editBranchManage(projectName: string, ctx: InteractiveContext): P
   });
 
   if (confirmed) {
-    config.setProject(branchName, updatedConfig);
+    await config.setProjectSafe(branchName, updatedConfig);
     log.info(`Branch configuration '${branchName}' updated successfully!`);
   }
 }
@@ -773,7 +771,7 @@ async function deleteBranchManage(projectName: string, ctx: InteractiveContext):
   });
 
   if (confirmed) {
-    config.deleteProject(branchName);
+    await config.deleteProjectSafe(branchName);
     log.info(`Branch configuration '${branchName}' deleted.`);
   }
 }

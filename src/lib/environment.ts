@@ -139,7 +139,8 @@ export class EnvironmentRecognizer {
 
   private static ensureConfigured(): void {
     if (!this.configured) {
-      this.config = new Config();
+      // Use singleton instance to avoid multiple Config instances
+      this.config = Config.getInstance();
       // Create a no-op logger if not configured
       this.log = {
         debug: () => {},
