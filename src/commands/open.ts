@@ -37,9 +37,6 @@ export function createOpenCommand(ctx: OpenContext): Command {
         log.setLogLevel('debug');
       }
 
-      // Initialize event registry
-      await EventRegistry.initialize();
-
       if (projectArg) {
         await processProject(projectArg, options, ctx);
       } else {

@@ -22,7 +22,6 @@ export function createManageCommand(ctx: ManageContext): Command {
         log.setLogLevel('debug');
       }
 
-      await EventRegistry.initialize();
       await mainMenu(ctx);
     });
 }

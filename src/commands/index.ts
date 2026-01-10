@@ -7,6 +7,7 @@ import omelette from 'omelette';
 import File from 'phylo';
 import { Config } from '../lib/config.js';
 import { EnvironmentRecognizer } from '../lib/environment.js';
+import { EventRegistry } from '../events/registry.js';
 import { createOpenCommand } from './open.js';
 import { createConfigCommand } from './config/index.js';
 import { createManageCommand } from './manage.js';
@@ -69,11 +70,13 @@ export function createCli(): Command {
     .option('--completion', 'Setup shell tab completion')
     .option('--shell', 'Output shell commands for evaluation')
     .option('--init', 'Generate shell integration function')
-    .hook('preAction', (thisCommand) => {
+    .hook('preAction', async (thisCommand) => {
       const opts = thisCommand.opts<GlobalOptions>();
       if (opts.debug) {
         log.setLogLevel('debug');
       }
+      // Initialize event registry once before any command runs
+      await EventRegistry.initialize();
     })
     .action(
       async (
