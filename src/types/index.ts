@@ -99,6 +99,20 @@ export interface EventHandler {
   help: EventHelp;
 }
 
+/**
+ * Type representing an event class with static properties.
+ * This is the shape of the class constructor itself (not an instance).
+ * Used when storing event classes in the registry.
+ */
+export interface EventHandlerClass {
+  readonly metadata: EventMetadata;
+  readonly validation: EventValidation;
+  readonly configuration: EventConfiguration;
+  readonly processing: EventProcessing;
+  readonly tmux?: EventTmux | null;
+  readonly help: EventHelp;
+}
+
 // Project class type (for use before implementation)
 export interface Project {
   name: string;

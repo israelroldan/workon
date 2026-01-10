@@ -248,9 +248,11 @@ async function initBranch(defaultName: string, ctx: InteractiveContext): Promise
   const branchName = `${defaultName}#${branch}`;
   const baseProject = projects[defaultName];
 
-  // Create branch config by inheriting from base project
-  const branchConfig = deepAssign({}, baseProject, { branch }) as ProjectConfig;
-  delete (branchConfig as any).name;
+  // Create branch config by inheriting from base project (exclude name property)
+  const { name: _excludedName, ...mergedConfig } = deepAssign({}, baseProject, {
+    branch,
+  }) as ProjectConfig;
+  const branchConfig: ProjectConfig = mergedConfig;
 
   projects[branchName] = branchConfig;
   config.set('projects', projects);
@@ -425,8 +427,8 @@ async function openProject(projectName: string, ctx: InteractiveContext): Promis
 
   for (const event of events) {
     const eventHandler = EventRegistry.getEventByName(event);
-    if (eventHandler && (eventHandler as any).processing) {
-      await (eventHandler as any).processing.processEvent({
+    if (eventHandler) {
+      await eventHandler.processing.processEvent({
         project: projectEnv.project,
         isShellMode: false,
         shellCommands: [],
@@ -490,8 +492,8 @@ async function createProjectManage(ctx: InteractiveContext): Promise<void> {
   for (const eventName of selectedEvents) {
     const eventHandler = EventRegistry.getEventByName(eventName);
     if (eventHandler) {
-      const eventConfig = await (eventHandler as any).configuration.configureInteractive();
-      events[eventName as keyof EventsConfig] = eventConfig;
+      const eventConfig = await eventHandler.configuration.configureInteractive();
+      events[eventName as keyof EventsConfig] = eventConfig as EventsConfig[keyof EventsConfig];
     }
   }
 
@@ -583,8 +585,8 @@ async function editProjectManage(ctx: InteractiveContext): Promise<void> {
       } else {
         const eventHandler = EventRegistry.getEventByName(eventName);
         if (eventHandler) {
-          const eventConfig = await (eventHandler as any).configuration.configureInteractive();
-          events[eventName as keyof EventsConfig] = eventConfig;
+          const eventConfig = await eventHandler.configuration.configureInteractive();
+          events[eventName as keyof EventsConfig] = eventConfig as EventsConfig[keyof EventsConfig];
         }
       }
     }
@@ -733,8 +735,8 @@ async function editBranchManage(projectName: string, ctx: InteractiveContext): P
       } else {
         const eventHandler = EventRegistry.getEventByName(eventName);
         if (eventHandler) {
-          const eventConfig = await (eventHandler as any).configuration.configureInteractive();
-          events[eventName as keyof EventsConfig] = eventConfig;
+          const eventConfig = await eventHandler.configuration.configureInteractive();
+          events[eventName as keyof EventsConfig] = eventConfig as EventsConfig[keyof EventsConfig];
         }
       }
     }

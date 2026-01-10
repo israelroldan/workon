@@ -1,4 +1,4 @@
-import type { EventHandler, EventMetadata } from '../types/index.js';
+import type { EventHandlerClass, EventMetadata } from '../types/index.js';
 
 // Explicit imports for all events (works with bundled builds)
 import { CwdEvent } from './core/cwd.js';
@@ -16,7 +16,7 @@ const ALL_EVENTS = [CwdEvent, IdeEvent, WebEvent, ClaudeEvent, DockerEvent, NpmE
  * Uses explicit imports to work with bundled builds
  */
 class EventRegistryClass {
-  private _events = new Map<string, EventHandler>();
+  private _events = new Map<string, EventHandlerClass>();
   private _initialized = false;
 
   /**
@@ -34,32 +34,31 @@ class EventRegistryClass {
    */
   private registerEvents(): void {
     for (const EventClass of ALL_EVENTS) {
-      if (this.isValidEvent(EventClass)) {
-        const metadata = (EventClass as unknown as { metadata: EventMetadata }).metadata;
-        this._events.set(metadata.name, EventClass as unknown as EventHandler);
+      if (this.isValidEventClass(EventClass)) {
+        this._events.set(EventClass.metadata.name, EventClass);
       }
     }
   }
 
   /**
-   * Validate if a class is a proper event
+   * Type guard to check if an object is a valid EventHandlerClass
    */
-  private isValidEvent(EventClass: unknown): boolean {
-    try {
-      if (typeof EventClass !== 'function') return false;
+  private isValidEventClass(obj: unknown): obj is EventHandlerClass {
+    if (typeof obj !== 'function' && typeof obj !== 'object') return false;
+    if (obj === null) return false;
 
-      const metadata = (EventClass as { metadata?: EventMetadata }).metadata;
-      return (
-        metadata !== undefined &&
-        typeof metadata.name === 'string' &&
-        typeof metadata.displayName === 'string' &&
-        typeof (EventClass as { validation?: object }).validation === 'object' &&
-        typeof (EventClass as { configuration?: object }).configuration === 'object' &&
-        typeof (EventClass as { processing?: object }).processing === 'object'
-      );
-    } catch {
-      return false;
-    }
+    const candidate = obj as Partial<EventHandlerClass>;
+    return (
+      candidate.metadata !== undefined &&
+      typeof candidate.metadata.name === 'string' &&
+      typeof candidate.metadata.displayName === 'string' &&
+      candidate.validation !== undefined &&
+      typeof candidate.validation.validateConfig === 'function' &&
+      candidate.configuration !== undefined &&
+      typeof candidate.configuration.configureInteractive === 'function' &&
+      candidate.processing !== undefined &&
+      typeof candidate.processing.processEvent === 'function'
+    );
   }
 
   /**
@@ -73,7 +72,7 @@ class EventRegistryClass {
   /**
    * Get event by name
    */
-  getEventByName(name: string): EventHandler | null {
+  getEventByName(name: string): EventHandlerClass | null {
     this.ensureInitialized();
     return this._events.get(name) ?? null;
   }
@@ -85,12 +84,11 @@ class EventRegistryClass {
     this.ensureInitialized();
 
     const events: Array<{ name: string; value: string; description: string }> = [];
-    for (const [name, EventClass] of this._events) {
-      const metadata = (EventClass as { metadata: EventMetadata }).metadata;
+    for (const [name, eventClass] of this._events) {
       events.push({
-        name: metadata.displayName,
+        name: eventClass.metadata.displayName,
         value: name,
-        description: metadata.description,
+        description: eventClass.metadata.description,
       });
     }
 
@@ -100,17 +98,17 @@ class EventRegistryClass {
   /**
    * Get events that support tmux integration
    */
-  getTmuxEnabledEvents(): Array<{ name: string; event: EventHandler; priority: number }> {
+  getTmuxEnabledEvents(): Array<{ name: string; event: EventHandlerClass; priority: number }> {
     this.ensureInitialized();
 
-    const tmuxEvents: Array<{ name: string; event: EventHandler; priority: number }> = [];
-    for (const [name, EventClass] of this._events) {
-      const tmux = (EventClass as { tmux?: { getLayoutPriority?: () => number } }).tmux;
+    const tmuxEvents: Array<{ name: string; event: EventHandlerClass; priority: number }> = [];
+    for (const [name, eventClass] of this._events) {
+      const tmux = eventClass.tmux;
       if (tmux) {
         tmuxEvents.push({
           name,
-          event: EventClass,
-          priority: tmux.getLayoutPriority ? tmux.getLayoutPriority() : 0,
+          event: eventClass,
+          priority: tmux.getLayoutPriority(),
         });
       }
     }
@@ -133,23 +131,15 @@ class EventRegistryClass {
     this.ensureInitialized();
 
     const events = [];
-    for (const [name, EventClass] of this._events) {
-      const typedClass = EventClass as {
-        metadata: EventMetadata;
-        validation?: object;
-        configuration?: object;
-        processing?: object;
-        tmux?: object;
-        help?: object;
-      };
+    for (const [name, eventClass] of this._events) {
       events.push({
         name,
-        metadata: typedClass.metadata,
-        hasValidation: !!typedClass.validation,
-        hasConfiguration: !!typedClass.configuration,
-        hasProcessing: !!typedClass.processing,
-        hasTmux: !!typedClass.tmux,
-        hasHelp: !!typedClass.help,
+        metadata: eventClass.metadata,
+        hasValidation: !!eventClass.validation,
+        hasConfiguration: !!eventClass.configuration,
+        hasProcessing: !!eventClass.processing,
+        hasTmux: !!eventClass.tmux,
+        hasHelp: !!eventClass.help,
       });
     }
 

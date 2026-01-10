@@ -155,8 +155,8 @@ async function createProject(ctx: ManageContext): Promise<void> {
   for (const eventName of selectedEvents) {
     const eventHandler = EventRegistry.getEventByName(eventName);
     if (eventHandler) {
-      const eventConfig = await (eventHandler as any).configuration.configureInteractive();
-      events[eventName as keyof EventsConfig] = eventConfig;
+      const eventConfig = await eventHandler.configuration.configureInteractive();
+      events[eventName as keyof EventsConfig] = eventConfig as EventsConfig[keyof EventsConfig];
     }
   }
 
@@ -267,8 +267,8 @@ async function editProject(ctx: ManageContext): Promise<void> {
       } else {
         const eventHandler = EventRegistry.getEventByName(eventName);
         if (eventHandler) {
-          const eventConfig = await (eventHandler as any).configuration.configureInteractive();
-          events[eventName as keyof EventsConfig] = eventConfig;
+          const eventConfig = await eventHandler.configuration.configureInteractive();
+          events[eventName as keyof EventsConfig] = eventConfig as EventsConfig[keyof EventsConfig];
         }
       }
     }

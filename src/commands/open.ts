@@ -1,7 +1,13 @@
 import { Command } from 'commander';
 import File from 'phylo';
 import type { Config } from '../lib/config.js';
-import type { Logger, ClaudeConfig, NpmConfig } from '../types/index.js';
+import type {
+  Logger,
+  ClaudeConfig,
+  NpmConfig,
+  Project,
+  EventProcessingContext,
+} from '../types/index.js';
 import { EnvironmentRecognizer, ProjectEnvironment } from '../lib/environment.js';
 import { TmuxManager } from '../lib/tmux.js';
 import { EventRegistry } from '../events/registry.js';
@@ -195,7 +201,7 @@ function resolveCommandDependencies(
 }
 
 async function handleSplitTerminal(
-  project: { name: string; path: { path: string }; events: Record<string, unknown> },
+  project: Project,
   isShellMode: boolean,
   dryRun: boolean,
   shellCommands: string[],
@@ -247,20 +253,20 @@ async function handleSplitTerminal(
   // If tmux didn't handle cwd/claude, process them normally
   if (!tmuxHandled && !dryRun) {
     for (const event of events.filter((e) => ['cwd', 'claude'].includes(e))) {
-      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+      await processEvent(event, { project, isShellMode, shellCommands }, ctx);
     }
   }
 
   // Process other events
   if (!dryRun) {
     for (const event of events.filter((e) => !['cwd', 'claude'].includes(e))) {
-      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+      await processEvent(event, { project, isShellMode, shellCommands }, ctx);
     }
   }
 }
 
 async function handleThreePaneLayout(
-  project: { name: string; path: { path: string }; events: Record<string, unknown> },
+  project: Project,
   isShellMode: boolean,
   dryRun: boolean,
   shellCommands: string[],
@@ -321,20 +327,20 @@ async function handleThreePaneLayout(
   // If tmux didn't handle cwd/claude/npm, process them normally
   if (!tmuxHandled && !dryRun) {
     for (const event of events.filter((e) => ['cwd', 'claude', 'npm'].includes(e))) {
-      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+      await processEvent(event, { project, isShellMode, shellCommands }, ctx);
     }
   }
 
   // Process other events
   if (!dryRun) {
     for (const event of events.filter((e) => !['cwd', 'claude', 'npm'].includes(e))) {
-      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+      await processEvent(event, { project, isShellMode, shellCommands }, ctx);
     }
   }
 }
 
 async function handleTwoPaneNpmLayout(
-  project: { name: string; path: { path: string }; events: Record<string, unknown> },
+  project: Project,
   isShellMode: boolean,
   dryRun: boolean,
   shellCommands: string[],
@@ -389,21 +395,21 @@ async function handleTwoPaneNpmLayout(
   // If tmux didn't handle cwd/npm, process them normally
   if (!tmuxHandled && !dryRun) {
     for (const event of events.filter((e) => ['cwd', 'npm'].includes(e))) {
-      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+      await processEvent(event, { project, isShellMode, shellCommands }, ctx);
     }
   }
 
   // Process other events
   if (!dryRun) {
     for (const event of events.filter((e) => !['cwd', 'npm'].includes(e))) {
-      await processEvent(event, { project: project as any, isShellMode, shellCommands }, ctx);
+      await processEvent(event, { project, isShellMode, shellCommands }, ctx);
     }
   }
 }
 
 async function processEvent(
   event: string,
-  context: { project: any; isShellMode: boolean; shellCommands: string[] },
+  context: EventProcessingContext,
   ctx: OpenContext
 ): Promise<void> {
   const { log } = ctx;
@@ -411,8 +417,8 @@ async function processEvent(
   log.debug(`Processing event ${event}`);
 
   const eventHandler = EventRegistry.getEventByName(event);
-  if (eventHandler && (eventHandler as any).processing) {
-    await (eventHandler as any).processing.processEvent(context);
+  if (eventHandler) {
+    await eventHandler.processing.processEvent(context);
   } else {
     log.debug(`No event handler found for: ${event}`);
   }
@@ -436,17 +442,16 @@ async function showProjectHelp(projectName: string, ctx: OpenContext): Promise<v
   for (const eventName of configuredEvents) {
     const eventHandler = EventRegistry.getEventByName(eventName);
     if (eventHandler) {
-      const metadata = (eventHandler as any).metadata;
-      const config = projectConfig.events[eventName as keyof typeof projectConfig.events];
+      const eventConfig = projectConfig.events[eventName as keyof typeof projectConfig.events];
       let configDesc = '';
-      if (config !== true && config !== 'true') {
-        if (typeof config === 'object') {
-          configDesc = ` (${JSON.stringify(config)})`;
+      if (eventConfig !== true && eventConfig !== 'true') {
+        if (typeof eventConfig === 'object') {
+          configDesc = ` (${JSON.stringify(eventConfig)})`;
         } else {
-          configDesc = ` (${config})`;
+          configDesc = ` (${eventConfig})`;
         }
       }
-      console.log(`  ${eventName.padEnd(8)} - ${metadata.description}${configDesc}`);
+      console.log(`  ${eventName.padEnd(8)} - ${eventHandler.metadata.description}${configDesc}`);
     }
   }
 
