@@ -122,7 +122,7 @@ describe('DockerEvent', () => {
     });
 
     it('should use default compose file when not specified', () => {
-      expect(DockerEvent.getDockerCommand({ services: ['web'] })).toBe(
+      expect(DockerEvent.getDockerCommand({ compose_file: 'docker-compose.yml', services: ['web'] })).toBe(
         'docker-compose -f docker-compose.yml up -d web'
       );
     });

@@ -21,7 +21,8 @@ describe('createAddCommand', () => {
     error: ReturnType<typeof vi.fn>;
     setLogLevel: ReturnType<typeof vi.fn>;
   };
-  let mockExit: ReturnType<typeof vi.spyOn>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockExit: any;
 
   beforeEach(() => {
     config = new Config();

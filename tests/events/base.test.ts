@@ -8,7 +8,7 @@ class TestEvent extends BaseEvent {
       name: 'test',
       displayName: 'Test Event',
       description: 'A test event for testing',
-      category: 'test' as const,
+      category: 'extension' as const,
       requiresTmux: false,
       dependencies: [],
     };

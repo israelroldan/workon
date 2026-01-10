@@ -188,16 +188,16 @@ describe('NpmEvent', () => {
 
   describe('tmux', () => {
     it('should have layout priority of 50', () => {
-      expect(NpmEvent.tmux.getLayoutPriority()).toBe(50);
+      expect(NpmEvent.tmux!.getLayoutPriority()).toBe(50);
     });
 
     it('should contribute three-pane layout when claude is enabled', () => {
-      expect(NpmEvent.tmux.contributeToLayout(['claude'])).toBe('three-pane');
+      expect(NpmEvent.tmux!.contributeToLayout!(['claude'])).toBe('three-pane');
     });
 
     it('should contribute two-pane-npm layout when claude is not enabled', () => {
-      expect(NpmEvent.tmux.contributeToLayout([])).toBe('two-pane-npm');
-      expect(NpmEvent.tmux.contributeToLayout(['cwd', 'ide'])).toBe('two-pane-npm');
+      expect(NpmEvent.tmux!.contributeToLayout!([])).toBe('two-pane-npm');
+      expect(NpmEvent.tmux!.contributeToLayout!(['cwd', 'ide'])).toBe('two-pane-npm');
     });
   });
 

@@ -171,16 +171,16 @@ describe('ClaudeEvent', () => {
 
   describe('tmux', () => {
     it('should have layout priority of 100', () => {
-      expect(ClaudeEvent.tmux.getLayoutPriority()).toBe(100);
+      expect(ClaudeEvent.tmux!.getLayoutPriority()).toBe(100);
     });
 
     it('should contribute three-pane layout when npm is enabled', () => {
-      expect(ClaudeEvent.tmux.contributeToLayout(['npm'])).toBe('three-pane');
+      expect(ClaudeEvent.tmux!.contributeToLayout!(['npm'])).toBe('three-pane');
     });
 
     it('should contribute split layout when npm is not enabled', () => {
-      expect(ClaudeEvent.tmux.contributeToLayout([])).toBe('split');
-      expect(ClaudeEvent.tmux.contributeToLayout(['cwd', 'ide'])).toBe('split');
+      expect(ClaudeEvent.tmux!.contributeToLayout!([])).toBe('split');
+      expect(ClaudeEvent.tmux!.contributeToLayout!(['cwd', 'ide'])).toBe('split');
     });
   });
 
@@ -198,9 +198,13 @@ describe('ClaudeEvent', () => {
     });
 
     it('should include resume example', () => {
-      const resumeExample = ClaudeEvent.help.examples.find(
-        (ex) => typeof ex.config === 'object' && ex.config.flags?.includes('--resume')
-      );
+      const resumeExample = ClaudeEvent.help.examples.find((ex) => {
+        if (typeof ex.config === 'object' && ex.config !== null) {
+          const config = ex.config as { flags?: string[] };
+          return config.flags?.includes('--resume');
+        }
+        return false;
+      });
       expect(resumeExample).toBeDefined();
     });
   });

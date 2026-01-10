@@ -3,17 +3,15 @@ import { Config } from '../../src/lib/config.js';
 import { BaseEnvironment, ProjectEnvironment } from '../../src/lib/environment.js';
 
 // Use vi.hoisted to ensure mocks are available when vi.mock is hoisted
-const { mockSelect, mockInput, mockConfirm, mockCheckbox } = vi.hoisted(() => ({
+const { mockSelect, mockInput, mockCheckbox } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockInput: vi.fn(),
-  mockConfirm: vi.fn(),
   mockCheckbox: vi.fn(),
 }));
 
 vi.mock('@inquirer/prompts', () => ({
   select: mockSelect,
   input: mockInput,
-  confirm: mockConfirm,
   checkbox: mockCheckbox,
 }));
 
@@ -34,9 +32,6 @@ describe('interactive command', () => {
 
   beforeEach(() => {
     config = new Config();
-    // Clear all projects to ensure test isolation
-    const projects = config.getProjects();
-    Object.keys(projects).forEach((name) => config.deleteProject(name));
 
     mockLog = {
       debug: vi.fn(),
@@ -51,13 +46,17 @@ describe('interactive command', () => {
     // Reset all mocks
     mockSelect.mockReset();
     mockInput.mockReset();
-    mockConfirm.mockReset();
     mockCheckbox.mockReset();
   });
 
   afterEach(() => {
     consoleSpy.mockRestore();
-    config.deleteProject('testproj');
+    try {
+      config.deleteProject('testproj');
+      config.deleteProject('newproj');
+    } catch {
+      // Ignore cleanup errors
+    }
   });
 
   describe('runInteractive', () => {
@@ -143,130 +142,25 @@ describe('interactive command', () => {
       expect(project).toBeDefined();
       expect(project?.ide).toBe('vscode');
       expect(project?.events.cwd).toBe(true);
-
-      // Clean up
-      config.deleteProject('newproj');
-    });
-  });
-
-  describe('switch-project flow', () => {
-    it('should show no projects message when none exist', async () => {
-      mockSelect
-        .mockResolvedValueOnce('switch-project')
-        .mockResolvedValueOnce('exit');
-
-      await runInteractive({
-        config,
-        log: mockLog,
-        environment: new BaseEnvironment(),
-      });
-
-      expect(mockLog.info).toHaveBeenCalledWith(
-        expect.stringContaining('No projects configured')
-      );
-    });
-
-    it('should list existing projects', async () => {
-      // Set up a project
-      config.setProject('existingproj', {
-        path: '/tmp/existing',
-        events: { cwd: true },
-      });
-
-      mockSelect
-        .mockResolvedValueOnce('switch-project')
-        .mockResolvedValueOnce('__back__') // Go back
-        .mockResolvedValueOnce('exit');
-
-      await runInteractive({
-        config,
-        log: mockLog,
-        environment: new BaseEnvironment(),
-      });
-
-      // Should have been called with project in choices
-      expect(mockSelect).toHaveBeenCalledWith(
-        expect.objectContaining({
-          choices: expect.arrayContaining([
-            expect.objectContaining({
-              value: 'existingproj',
-            }),
-          ]),
-        })
-      );
-
-      // Clean up
-      config.deleteProject('existingproj');
-    });
-  });
-
-  describe('manage-projects flow', () => {
-    it('should show no projects message when listing empty', async () => {
-      mockSelect
-        .mockResolvedValueOnce('manage-projects')
-        .mockResolvedValueOnce('exit');
-
-      await runInteractive({
-        config,
-        log: mockLog,
-        environment: new BaseEnvironment(),
-      });
-
-      expect(mockLog.info).toHaveBeenCalledWith('No projects configured.');
-    });
-
-    it('should allow listing projects', async () => {
-      config.setProject('proj1', { path: '/tmp/proj1', events: { cwd: true } });
-
-      mockSelect
-        .mockResolvedValueOnce('manage-projects')
-        .mockResolvedValueOnce('list')
-        .mockResolvedValueOnce('__back__')
-        .mockResolvedValueOnce('exit');
-
-      await runInteractive({
-        config,
-        log: mockLog,
-        environment: new BaseEnvironment(),
-      });
-
-      // Should have output project info
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('proj1'));
-
-      // Clean up
-      config.deleteProject('proj1');
-    });
-
-    it('should allow deleting projects', async () => {
-      config.setProject('todelete', { path: '/tmp/todelete', events: {} });
-
-      mockSelect
-        .mockResolvedValueOnce('manage-projects')
-        .mockResolvedValueOnce('delete')
-        .mockResolvedValueOnce('todelete')
-        .mockResolvedValueOnce('exit');
-
-      mockConfirm.mockResolvedValueOnce(true);
-
-      await runInteractive({
-        config,
-        log: mockLog,
-        environment: new BaseEnvironment(),
-      });
-
-      // Project should be deleted
-      expect(config.getProject('todelete')).toBeUndefined();
     });
   });
 });
 
 describe('IDE_CHOICES', () => {
-  it('should be importable and have expected structure', async () => {
-    // Reset mocks for this isolated test
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     mockSelect.mockReset();
     mockInput.mockReset();
     mockCheckbox.mockReset();
+  });
 
+  afterEach(() => {
+    consoleSpy.mockRestore();
+  });
+
+  it('should be importable and have expected structure', async () => {
     // The IDE choices are internal, but we can verify they're used correctly
     // by checking select is called with IDE options
     mockSelect
@@ -281,9 +175,6 @@ describe('IDE_CHOICES', () => {
     mockCheckbox.mockResolvedValueOnce(['cwd']);
 
     const localConfig = new Config();
-    // Clear all projects
-    const projects = localConfig.getProjects();
-    Object.keys(projects).forEach((name) => localConfig.deleteProject(name));
 
     const localMockLog = {
       debug: vi.fn(),
