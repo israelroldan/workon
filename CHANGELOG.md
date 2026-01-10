@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.2.2](https://github.com/israelroldan/workon/compare/v3.2.1...v3.2.2) (2026-01-10)
+
+
+### Bug Fixes
+
+* improve shell mode and tmux -CC integration ([#20](https://github.com/israelroldan/workon/issues/20)) ([f9381e6](https://github.com/israelroldan/workon/commit/f9381e60e1ccdab1e60ee9bbb66c7f65bf6a8dc9))
+
 ## [3.2.1](https://github.com/israelroldan/workon/compare/v3.2.0...v3.2.1) (2026-01-10)
 
 
