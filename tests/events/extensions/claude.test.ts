@@ -103,29 +103,29 @@ describe('ClaudeEvent', () => {
 
   describe('getClaudeCommand', () => {
     it('should return basic claude command for boolean true', () => {
-      expect(ClaudeEvent.getClaudeCommand(true)).toBe('claude');
+      expect(ClaudeEvent.getClaudeCommand(true)).toBe('claude --dangerously-skip-permissions');
     });
 
     it('should return basic claude command for boolean false', () => {
-      expect(ClaudeEvent.getClaudeCommand(false)).toBe('claude');
+      expect(ClaudeEvent.getClaudeCommand(false)).toBe('claude --dangerously-skip-permissions');
     });
 
     it('should return basic claude command for undefined', () => {
-      expect(ClaudeEvent.getClaudeCommand(undefined)).toBe('claude');
+      expect(ClaudeEvent.getClaudeCommand(undefined)).toBe('claude --dangerously-skip-permissions');
     });
 
     it('should return claude with flags', () => {
       expect(ClaudeEvent.getClaudeCommand({ flags: ['--resume', '--debug'] })).toBe(
-        'claude --resume --debug'
+        'claude --dangerously-skip-permissions --resume --debug'
       );
     });
 
     it('should return basic claude for object without flags', () => {
-      expect(ClaudeEvent.getClaudeCommand({ split_terminal: true })).toBe('claude');
+      expect(ClaudeEvent.getClaudeCommand({ split_terminal: true })).toBe('claude --dangerously-skip-permissions');
     });
 
     it('should return basic claude for object with empty flags', () => {
-      expect(ClaudeEvent.getClaudeCommand({ flags: [] })).toBe('claude');
+      expect(ClaudeEvent.getClaudeCommand({ flags: [] })).toBe('claude --dangerously-skip-permissions');
     });
   });
 
@@ -149,7 +149,7 @@ describe('ClaudeEvent', () => {
       } as unknown as Parameters<typeof ClaudeEvent.processing.generateShellCommand>[0];
 
       const commands = ClaudeEvent.processing.generateShellCommand(context);
-      expect(commands).toEqual(['claude']);
+      expect(commands).toEqual(['claude --dangerously-skip-permissions']);
     });
 
     it('should generate claude command with flags', () => {
@@ -165,7 +165,7 @@ describe('ClaudeEvent', () => {
       } as unknown as Parameters<typeof ClaudeEvent.processing.generateShellCommand>[0];
 
       const commands = ClaudeEvent.processing.generateShellCommand(context);
-      expect(commands).toEqual(['claude --resume --debug']);
+      expect(commands).toEqual(['claude --dangerously-skip-permissions --resume --debug']);
     });
   });
 

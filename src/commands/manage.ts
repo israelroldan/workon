@@ -171,7 +171,7 @@ async function createProject(ctx: ManageContext): Promise<void> {
   });
 
   if (confirmed) {
-    config.setProject(name, projectConfig);
+    await config.setProjectSafe(name, projectConfig);
     log.info(`Project '${name}' created successfully!`);
     log.info(`Use 'workon ${name}' to start working!`);
   } else {
@@ -285,7 +285,7 @@ async function editProject(ctx: ManageContext): Promise<void> {
   });
 
   if (confirmed) {
-    config.setProject(name, updatedConfig);
+    await config.setProjectSafe(name, updatedConfig);
     log.info(`Project '${name}' updated successfully!`);
   } else {
     log.info('Edit cancelled.');
@@ -313,7 +313,7 @@ async function deleteProject(ctx: ManageContext): Promise<void> {
   });
 
   if (confirmed) {
-    config.deleteProject(name);
+    await config.deleteProjectSafe(name);
     log.info(`Project '${name}' deleted.`);
   } else {
     log.info('Delete cancelled.');

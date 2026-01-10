@@ -5,6 +5,7 @@ describe('Config', () => {
   let config: Config;
 
   beforeEach(() => {
+    Config.resetInstance();
     config = new Config();
   });
 
@@ -27,6 +28,12 @@ describe('Config', () => {
     it('should handle transient properties', () => {
       config.set('pkg', { version: '1.0.0' });
       expect(config.get('pkg')).toEqual({ version: '1.0.0' });
+    });
+
+    it('should throw when setting undefined value', () => {
+      expect(() => config.set('test_key', undefined)).toThrow(
+        "Cannot set 'test_key' to undefined"
+      );
     });
   });
 
@@ -65,6 +72,56 @@ describe('Config', () => {
       config.setProject('test_project', { path: 'test', events: {} });
       config.deleteProject('test_project');
       expect(config.getProject('test_project')).toBeUndefined();
+    });
+  });
+
+  describe('safe async methods', () => {
+    it('should set project safely with locking', async () => {
+      const project = {
+        path: 'test/path',
+        ide: 'vscode' as const,
+        events: { cwd: true },
+      };
+
+      await config.setProjectSafe('test_project', project);
+      expect(config.getProject('test_project')).toEqual(project);
+    });
+
+    it('should delete project safely with locking', async () => {
+      config.setProject('test_project', { path: 'test', events: {} });
+      await config.deleteProjectSafe('test_project');
+      expect(config.getProject('test_project')).toBeUndefined();
+    });
+
+    it('should handle concurrent setProjectSafe calls', async () => {
+      const project1 = { path: 'path1', ide: 'vscode' as const, events: { cwd: true } };
+      const project2 = { path: 'path2', ide: 'idea' as const, events: { ide: true } };
+
+      // Run both operations concurrently
+      await Promise.all([
+        config.setProjectSafe('project1', project1),
+        config.setProjectSafe('project2', project2),
+      ]);
+
+      // Both should be saved
+      expect(config.getProject('project1')).toEqual(project1);
+      expect(config.getProject('project2')).toEqual(project2);
+    });
+  });
+
+  describe('singleton pattern', () => {
+    it('should return same instance with getInstance', () => {
+      const instance1 = Config.getInstance();
+      const instance2 = Config.getInstance();
+      expect(instance1).toBe(instance2);
+    });
+
+    it('should reset instance with resetInstance', () => {
+      const instance1 = Config.getInstance();
+      Config.resetInstance();
+      const instance2 = Config.getInstance();
+      // In test mode, these will be different instances
+      expect(instance1).not.toBe(instance2);
     });
   });
 });

@@ -147,7 +147,7 @@ async function addProject(pathArg: string, options: AddOptions, ctx: AddContext)
   }
 
   // Save the project
-  config.setProject(projectName, projectConfig);
+  await config.setProjectSafe(projectName, projectConfig);
 
   // Output success
   log.info(`Added project '${projectName}'`);

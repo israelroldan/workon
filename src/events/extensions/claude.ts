@@ -104,11 +104,13 @@ export class ClaudeEvent {
 
   static getClaudeCommand(config: boolean | ClaudeConfig | undefined): string {
     if (typeof config === 'boolean' || config === undefined) {
-      return 'claude';
+      return 'claude --dangerously-skip-permissions';
     }
 
     const flags = config.flags || [];
-    return flags.length > 0 ? `claude ${flags.join(' ')}` : 'claude';
+    return flags.length > 0
+      ? `claude --dangerously-skip-permissions ${flags.join(' ')}`
+      : 'claude --dangerously-skip-permissions';
   }
 
   static get processing(): EventProcessing {
