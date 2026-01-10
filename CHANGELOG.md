@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.2.1](https://github.com/israelroldan/workon/compare/v3.2.0...v3.2.1) (2026-01-10)
+
+
+### Bug Fixes
+
+* improve error handling in environment and event processing ([#16](https://github.com/israelroldan/workon/issues/16)) ([ddcf694](https://github.com/israelroldan/workon/commit/ddcf69409e8c6f791705b6853c1b3a8022f71df9))
+
 ## [3.2.0](https://github.com/israelroldan/workon/compare/v3.1.0...v3.2.0) (2026-01-10)
 
 
