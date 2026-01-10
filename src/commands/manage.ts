@@ -2,23 +2,14 @@ import { Command } from 'commander';
 import { select, input, confirm, checkbox } from '@inquirer/prompts';
 import File from 'phylo';
 import type { Config } from '../lib/config.js';
-import type { Logger, ProjectConfig, EventsConfig, IdeType } from '../types/index.js';
+import type { Logger, ProjectConfig, EventsConfig } from '../types/index.js';
 import { EventRegistry } from '../events/registry.js';
+import { IDE_CHOICES } from '../types/constants.js';
 
 interface ManageContext {
   config: Config;
   log: Logger;
 }
-
-const IDE_CHOICES = [
-  { name: 'Visual Studio Code', value: 'vscode' as IdeType },
-  { name: 'Visual Studio Code (code)', value: 'code' as IdeType },
-  { name: 'IntelliJ IDEA', value: 'idea' as IdeType },
-  { name: 'Atom', value: 'atom' as IdeType },
-  { name: 'Sublime Text', value: 'subl' as IdeType },
-  { name: 'Vim', value: 'vim' as IdeType },
-  { name: 'Emacs', value: 'emacs' as IdeType },
-];
 
 export function createManageCommand(ctx: ManageContext): Command {
   const { log } = ctx;
