@@ -112,9 +112,9 @@ async function processProject(
     const projectEnv = ProjectEnvironment.load(projectCfg, config.getDefaults());
     await switchTo(projectEnv, requestedCommands, options, ctx);
   } else {
-    log.debug(`Project '${projectName}' not found, starting interactive mode`);
-    const { runInteractive } = await import('./interactive.js');
-    await runInteractive({ config, log, environment, suggestedName: projectName });
+    log.error(`Project '${projectName}' not found.`);
+    log.info(`Run 'workon' without arguments to see available projects or create a new one.`);
+    process.exit(1);
   }
 }
 
