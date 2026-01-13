@@ -38,7 +38,7 @@ describe('TmuxManager', () => {
         "tmux has-session -t 'workon-myproject' 2>/dev/null && tmux kill-session -t 'workon-myproject'"
       );
       expect(commands).toContain(
-        "tmux new-session -d -s 'workon-myproject' -c '/path/to/project' 'claude; exec ${SHELL:-/bin/sh}'"
+        "tmux new-session -d -s 'workon-myproject' -c '/path/to/project' 'claude; exec $SHELL'"
       );
       expect(commands).toContain(
         "tmux split-window -h -t 'workon-myproject' -c '/path/to/project'"
@@ -53,7 +53,7 @@ describe('TmuxManager', () => {
       ]);
 
       expect(commands).toContain(
-        "tmux new-session -d -s 'workon-myproject' -c '/path/to/project' 'claude --model opus; exec ${SHELL:-/bin/sh}'"
+        "tmux new-session -d -s 'workon-myproject' -c '/path/to/project' 'claude --model opus; exec $SHELL'"
       );
     });
 
@@ -81,7 +81,7 @@ describe('TmuxManager', () => {
 
       expect(commands).toContain('# Create tmux three-pane session for myproject');
       expect(commands).toContain(
-        "tmux split-window -v -t 'workon-myproject:0.1' -c '/path/to/project' 'npm run dev; exec ${SHELL:-/bin/sh}'"
+        "tmux split-window -v -t 'workon-myproject:0.1' -c '/path/to/project' 'npm run dev; exec $SHELL'"
       );
       expect(commands).toContain("tmux resize-pane -t 'workon-myproject:0.2' -y 10");
     });
@@ -94,7 +94,7 @@ describe('TmuxManager', () => {
         'pnpm run start'
       );
 
-      expect(commands.some((c) => c.includes('pnpm run start; exec ${SHELL:-/bin/sh}'))).toBe(true);
+      expect(commands.some((c) => c.includes('pnpm run start; exec $SHELL'))).toBe(true);
     });
 
     it('should include claude flags', () => {
@@ -103,7 +103,7 @@ describe('TmuxManager', () => {
       ]);
 
       expect(commands).toContain(
-        "tmux new-session -d -s 'workon-myproject' -c '/path/to/project' 'claude --resume; exec ${SHELL:-/bin/sh}'"
+        "tmux new-session -d -s 'workon-myproject' -c '/path/to/project' 'claude --resume; exec $SHELL'"
       );
     });
   });
@@ -117,7 +117,7 @@ describe('TmuxManager', () => {
         "tmux new-session -d -s 'workon-myproject' -c '/path/to/project'"
       );
       expect(commands).toContain(
-        "tmux split-window -h -t 'workon-myproject' -c '/path/to/project' 'npm run dev; exec ${SHELL:-/bin/sh}'"
+        "tmux split-window -h -t 'workon-myproject' -c '/path/to/project' 'npm run dev; exec $SHELL'"
       );
     });
 
@@ -128,7 +128,7 @@ describe('TmuxManager', () => {
         'yarn start'
       );
 
-      expect(commands.some((c) => c.includes('yarn start; exec ${SHELL:-/bin/sh}'))).toBe(true);
+      expect(commands.some((c) => c.includes('yarn start; exec $SHELL'))).toBe(true);
     });
   });
 

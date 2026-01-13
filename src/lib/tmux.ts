@@ -9,8 +9,10 @@ const exec = promisify(execCallback);
  * This prevents tmux panes from showing "Pane is dead" after a process ends.
  */
 function wrapWithShellFallback(command: string): string {
-  // Use $SHELL to get the user's preferred shell, with /bin/sh as fallback
-  return `${command}; exec \${SHELL:-/bin/sh}`;
+  // Use $SHELL to get the user's preferred shell.
+  // Note: We use simple $SHELL syntax (not ${SHELL:-default}) for compatibility
+  // with non-POSIX shells like fish and csh that tmux may use to execute commands.
+  return `${command}; exec $SHELL`;
 }
 
 export class TmuxManager {
