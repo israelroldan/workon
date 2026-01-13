@@ -4,6 +4,15 @@ import { sanitizeForShell, escapeForSingleQuotes } from './sanitize.js';
 
 const exec = promisify(execCallback);
 
+/**
+ * Wraps a command so it falls back to a shell when the command exits.
+ * This prevents tmux panes from showing "Pane is dead" after a process ends.
+ */
+function wrapWithShellFallback(command: string): string {
+  // Use $SHELL to get the user's preferred shell, with /bin/sh as fallback
+  return `${command}; exec \${SHELL:-/bin/sh}`;
+}
+
 export class TmuxManager {
   private sessionPrefix = 'workon-';
 
@@ -55,11 +64,11 @@ export class TmuxManager {
     }
 
     const claudeCommand = claudeArgs.length > 0 ? `claude ${claudeArgs.join(' ')}` : 'claude';
-    const escapedClaudeCmd = escapeForSingleQuotes(claudeCommand);
+    const wrappedClaudeCmd = escapeForSingleQuotes(wrapWithShellFallback(claudeCommand));
 
     // Create new tmux session with claude in the first pane
     await exec(
-      `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${escapedClaudeCmd}'`
+      `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${wrappedClaudeCmd}'`
     );
 
     // Split window horizontally and run shell in second pane
@@ -87,12 +96,12 @@ export class TmuxManager {
     }
 
     const claudeCommand = claudeArgs.length > 0 ? `claude ${claudeArgs.join(' ')}` : 'claude';
-    const escapedClaudeCmd = escapeForSingleQuotes(claudeCommand);
-    const escapedNpmCmd = escapeForSingleQuotes(npmCommand);
+    const wrappedClaudeCmd = escapeForSingleQuotes(wrapWithShellFallback(claudeCommand));
+    const wrappedNpmCmd = escapeForSingleQuotes(wrapWithShellFallback(npmCommand));
 
     // Create new tmux session with claude in the first pane (left side)
     await exec(
-      `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${escapedClaudeCmd}'`
+      `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${wrappedClaudeCmd}'`
     );
 
     // Split window vertically - creates right side (50/50 split)
@@ -100,11 +109,8 @@ export class TmuxManager {
 
     // Split the right pane horizontally - creates top-right and bottom-right (50/50 split)
     await exec(
-      `tmux split-window -v -t '${escapedSession}:0.1' -c '${escapedPath}' '${escapedNpmCmd}'`
+      `tmux split-window -v -t '${escapedSession}:0.1' -c '${escapedPath}' '${wrappedNpmCmd}'`
     );
-
-    // Set remain-on-exit to keep pane open if command fails
-    await exec(`tmux set-option -t '${escapedSession}:0.2' remain-on-exit on`);
 
     // Resize panes to ensure npm pane is visible (give it at least 10 lines)
     await exec(`tmux resize-pane -t '${escapedSession}:0.2' -y 10`);
@@ -123,7 +129,7 @@ export class TmuxManager {
     const sessionName = this.getSessionName(projectName);
     const escapedSession = escapeForSingleQuotes(sessionName);
     const escapedPath = escapeForSingleQuotes(projectPath);
-    const escapedNpmCmd = escapeForSingleQuotes(npmCommand);
+    const wrappedNpmCmd = escapeForSingleQuotes(wrapWithShellFallback(npmCommand));
 
     // Kill existing session if it exists
     if (await this.sessionExists(sessionName)) {
@@ -135,11 +141,8 @@ export class TmuxManager {
 
     // Split window vertically and run npm command in right pane
     await exec(
-      `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}' '${escapedNpmCmd}'`
+      `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}' '${wrappedNpmCmd}'`
     );
-
-    // Set remain-on-exit to keep pane open if command fails
-    await exec(`tmux set-option -t '${escapedSession}:0.1' remain-on-exit on`);
 
     // Set focus on terminal pane (left pane)
     await exec(`tmux select-pane -t '${escapedSession}:0.0'`);
@@ -187,12 +190,12 @@ export class TmuxManager {
     const escapedSession = escapeForSingleQuotes(sessionName);
     const escapedPath = escapeForSingleQuotes(projectPath);
     const claudeCommand = claudeArgs.length > 0 ? `claude ${claudeArgs.join(' ')}` : 'claude';
-    const escapedClaudeCmd = escapeForSingleQuotes(claudeCommand);
+    const wrappedClaudeCmd = escapeForSingleQuotes(wrapWithShellFallback(claudeCommand));
 
     return [
       `# Create tmux split session for ${sanitizeForShell(projectName)}`,
       `tmux has-session -t '${escapedSession}' 2>/dev/null && tmux kill-session -t '${escapedSession}'`,
-      `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${escapedClaudeCmd}'`,
+      `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${wrappedClaudeCmd}'`,
       `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}'`,
       `tmux select-pane -t '${escapedSession}:0.0'`,
       this.getAttachCommand(sessionName),
@@ -209,16 +212,15 @@ export class TmuxManager {
     const escapedSession = escapeForSingleQuotes(sessionName);
     const escapedPath = escapeForSingleQuotes(projectPath);
     const claudeCommand = claudeArgs.length > 0 ? `claude ${claudeArgs.join(' ')}` : 'claude';
-    const escapedClaudeCmd = escapeForSingleQuotes(claudeCommand);
-    const escapedNpmCmd = escapeForSingleQuotes(npmCommand);
+    const wrappedClaudeCmd = escapeForSingleQuotes(wrapWithShellFallback(claudeCommand));
+    const wrappedNpmCmd = escapeForSingleQuotes(wrapWithShellFallback(npmCommand));
 
     return [
       `# Create tmux three-pane session for ${sanitizeForShell(projectName)}`,
       `tmux has-session -t '${escapedSession}' 2>/dev/null && tmux kill-session -t '${escapedSession}'`,
-      `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${escapedClaudeCmd}'`,
+      `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${wrappedClaudeCmd}'`,
       `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}'`,
-      `tmux split-window -v -t '${escapedSession}:0.1' -c '${escapedPath}' '${escapedNpmCmd}'`,
-      `tmux set-option -t '${escapedSession}:0.2' remain-on-exit on`,
+      `tmux split-window -v -t '${escapedSession}:0.1' -c '${escapedPath}' '${wrappedNpmCmd}'`,
       `tmux resize-pane -t '${escapedSession}:0.2' -y 10`,
       `tmux select-pane -t '${escapedSession}:0.0'`,
       this.getAttachCommand(sessionName),
@@ -233,14 +235,13 @@ export class TmuxManager {
     const sessionName = this.getSessionName(projectName);
     const escapedSession = escapeForSingleQuotes(sessionName);
     const escapedPath = escapeForSingleQuotes(projectPath);
-    const escapedNpmCmd = escapeForSingleQuotes(npmCommand);
+    const wrappedNpmCmd = escapeForSingleQuotes(wrapWithShellFallback(npmCommand));
 
     return [
       `# Create tmux two-pane session with npm for ${sanitizeForShell(projectName)}`,
       `tmux has-session -t '${escapedSession}' 2>/dev/null && tmux kill-session -t '${escapedSession}'`,
       `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}'`,
-      `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}' '${escapedNpmCmd}'`,
-      `tmux set-option -t '${escapedSession}:0.1' remain-on-exit on`,
+      `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}' '${wrappedNpmCmd}'`,
       `tmux select-pane -t '${escapedSession}:0.0'`,
       this.getAttachCommand(sessionName),
     ];
