@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.2.4](https://github.com/israelroldan/workon/compare/v3.2.3...v3.2.4) (2026-01-13)
+
+
+### Bug Fixes
+
+* return to shell when tmux pane process exits ([#24](https://github.com/israelroldan/workon/issues/24)) ([0c07efc](https://github.com/israelroldan/workon/commit/0c07efc2a471e6155835a209e7ebf5ebb34f0e07))
+
 ## [3.2.3](https://github.com/israelroldan/workon/compare/v3.2.2...v3.2.3) (2026-01-10)
 
 
