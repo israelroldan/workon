@@ -104,8 +104,12 @@ export class WorktreeManager {
 
     // Check if worktree already exists
     const existing = await this.get(dirName);
-    if (existing && !force) {
-      throw new Error(`Worktree '${dirName}' already exists at ${existing.path}`);
+    if (existing) {
+      if (!force) {
+        throw new Error(`Worktree '${dirName}' already exists at ${existing.path}`);
+      }
+      // Force specified: remove existing worktree first
+      await this.git.raw(['worktree', 'remove', '--force', existing.path]);
     }
 
     // Check if branch exists
@@ -114,7 +118,10 @@ export class WorktreeManager {
     const args = ['worktree', 'add'];
 
     if (branchExists) {
-      // Checkout existing branch
+      // Checkout existing branch - use --force in case branch is checked out elsewhere
+      if (force) {
+        args.push('--force');
+      }
       args.push(worktreePath, branch);
     } else {
       // Create new branch from baseBranch or current HEAD

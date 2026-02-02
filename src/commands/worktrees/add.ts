@@ -16,7 +16,7 @@ interface AddOptions {
   base?: string;
   force?: boolean;
   open?: boolean;
-  noHook?: boolean;
+  hook?: boolean; // Commander negated options: --no-hook sets hook=false
 }
 
 export function createAddCommand(ctx: WorktreesContext): Command {
@@ -72,8 +72,8 @@ export function createAddCommand(ctx: WorktreesContext): Command {
 
         spinner.succeed(`Worktree created at ${chalk.cyan(worktree.path)}`);
 
-        // Run post-setup hook if it exists and not disabled
-        if (options.noHook !== true && manager.hasSetupHook()) {
+        // Run post-setup hook if it exists and not disabled (--no-hook sets options.hook=false)
+        if (options.hook !== false && manager.hasSetupHook()) {
           const hookSpinner = ora('Running post-setup hook...').start();
           try {
             const { stdout, stderr } = await manager.runPostSetupHook(worktree.path);
