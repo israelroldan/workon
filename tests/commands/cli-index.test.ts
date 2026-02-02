@@ -22,6 +22,12 @@ vi.mock('../../src/lib/tmux.js', () => ({
 // Mock child_process
 vi.mock('child_process', () => ({
   spawn: vi.fn(() => ({ unref: vi.fn() })),
+  exec: vi.fn((cmd, opts, callback) => {
+    // Handle both 2-arg and 3-arg versions
+    const cb = typeof opts === 'function' ? opts : callback;
+    if (cb) cb(null, '', '');
+    return { stdout: '', stderr: '' };
+  }),
 }));
 
 describe('createCli', () => {
@@ -97,6 +103,12 @@ describe('createCli', () => {
       const program = createCli();
       const manageCmd = program.commands.find((c) => c.name() === 'manage');
       expect(manageCmd).toBeDefined();
+    });
+
+    it('should have "worktrees" command', () => {
+      const program = createCli();
+      const worktreesCmd = program.commands.find((c) => c.name() === 'worktrees');
+      expect(worktreesCmd).toBeDefined();
     });
   });
 

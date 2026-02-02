@@ -42,6 +42,13 @@ export class TmuxManager {
     return `${this.sessionPrefix}${sanitizeForShell(projectName)}`;
   }
 
+  getWorktreeSessionName(projectName: string, worktreeName: string): string {
+    // Session name format: workon-{project}-{worktree}
+    const sanitizedProject = sanitizeForShell(projectName);
+    const sanitizedWorktree = sanitizeForShell(worktreeName);
+    return `${this.sessionPrefix}${sanitizedProject}-${sanitizedWorktree}`;
+  }
+
   async killSession(sessionName: string): Promise<boolean> {
     try {
       await exec(`tmux kill-session -t '${escapeForSingleQuotes(sessionName)}'`);
