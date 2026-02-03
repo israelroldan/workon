@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.3.0](https://github.com/israelroldan/workon/compare/v3.2.4...v3.3.0) (2026-02-03)
+
+
+### Features
+
+* add git worktree management commands ([#26](https://github.com/israelroldan/workon/issues/26)) ([4268296](https://github.com/israelroldan/workon/commit/4268296c13809ba9fa87e47808c533a1e63e3b51))
+
 ## [3.2.4](https://github.com/israelroldan/workon/compare/v3.2.3...v3.2.4) (2026-01-13)
 
 
