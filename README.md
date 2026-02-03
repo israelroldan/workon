@@ -6,12 +6,13 @@ A productivity CLI tool that helps developers quickly switch between projects wi
 
 ## Features
 
-✨ **Smart Project Switching** - Switch between projects in your current shell (no nested processes!)  
-🔧 **IDE Integration** - Automatically open projects in VS Code, IntelliJ IDEA, or Atom  
-🌐 **Web Integration** - Launch project websites and documentation  
-🌳 **Git Branch Support** - Different configurations for different branches  
-📁 **Auto Directory Change** - Seamlessly `cd` into project directories  
-⚡ **Interactive Setup** - Guided project configuration  
+✨ **Smart Project Switching** - Switch between projects in your current shell (no nested processes!)
+🔧 **IDE Integration** - Automatically open projects in VS Code, IntelliJ IDEA, or Atom
+🌐 **Web Integration** - Launch project websites and documentation
+🌳 **Git Branch Support** - Different configurations for different branches
+🌲 **Git Worktrees** - Create, open, and manage git worktrees with tmux integration
+📁 **Auto Directory Change** - Seamlessly `cd` into project directories
+⚡ **Interactive Setup** - Guided project configuration
 🔄 **Backward Compatible** - Legacy nested shell mode still available
 
 ## Requirements
@@ -131,6 +132,49 @@ workon myproject --shell
 # Configure different settings for a git branch
 workon myproject#feature-branch
 ```
+
+### Git Worktrees
+
+Manage git worktrees with full tmux integration:
+
+```bash
+# List worktrees for a project
+workon worktrees myproject
+
+# Create a new worktree
+workon worktrees add myproject feature-branch
+
+# Open workon session in a worktree (creates tmux session)
+workon worktrees open myproject feature-branch
+
+# Remove a worktree
+workon worktrees remove myproject feature-branch
+
+# Merge worktree branch and remove
+workon worktrees merge myproject feature-branch
+
+# Create branch from detached HEAD (for PR workflow)
+workon worktrees branch myproject my-worktree new-branch-name --push
+```
+
+Worktrees created by workon are stored in `.worktrees/` inside the project. You can also use existing worktrees created elsewhere - they'll show as "(external)" in the list.
+
+#### Post-Setup Hook
+
+Create `.workon/worktree-setup.sh` in your project to run commands after creating a worktree:
+
+```bash
+#!/bin/bash
+# Install dependencies
+[ -f "package.json" ] && npm install
+
+# Copy environment file
+[ -f "$PROJECT_PATH/.env" ] && cp "$PROJECT_PATH/.env" .env
+```
+
+Environment variables available:
+- `WORKTREE_PATH` - Absolute path to the new worktree
+- `PROJECT_PATH` - Absolute path to the main project
 
 ### Legacy Mode (Nested Shells)
 ```bash

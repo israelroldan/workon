@@ -12,6 +12,7 @@ import { createOpenCommand } from './open.js';
 import { createConfigCommand } from './config/index.js';
 import { createManageCommand } from './manage.js';
 import { createAddCommand } from './add.js';
+import { createWorktreesCommand } from './worktrees/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -129,6 +130,7 @@ export function createCli(): Command {
   program.addCommand(createAddCommand({ config, log }));
   program.addCommand(createConfigCommand({ config, log }));
   program.addCommand(createManageCommand({ config, log }));
+  program.addCommand(createWorktreesCommand({ config, log }));
 
   // Handle unknown commands as project names
   program.on('command:*', async (operands) => {

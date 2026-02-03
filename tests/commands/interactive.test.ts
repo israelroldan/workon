@@ -37,6 +37,11 @@ vi.mock('child_process', () => ({
       }
     }),
   })),
+  exec: vi.fn((cmd, opts, callback) => {
+    const cb = typeof opts === 'function' ? opts : callback;
+    if (cb) cb(null, '', '');
+    return { stdout: '', stderr: '' };
+  }),
 }));
 
 // Import after mocking

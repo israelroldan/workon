@@ -1,12 +1,14 @@
 import { select, input, checkbox, confirm } from '@inquirer/prompts';
 import File from 'phylo';
 import deepAssign from 'deep-assign';
+import chalk from 'chalk';
 import type { Config } from '../lib/config.js';
 import type { Logger, ProjectConfig, EventsConfig } from '../types/index.js';
 import type { Environment, ProjectEnvironment as ProjectEnv } from '../lib/environment.js';
 import { ProjectEnvironment } from '../lib/environment.js';
 import { EventRegistry } from '../events/registry.js';
 import { IDE_CHOICES } from '../types/constants.js';
+import { WorktreeManager } from '../lib/worktree.js';
 
 interface InteractiveContext {
   config: Config;
@@ -87,6 +89,10 @@ async function startInteractive(
     case 'manage-branches':
       await manageBranches(defaultName, ctx);
       return;
+
+    case 'manage-worktrees':
+      await manageWorktrees(defaultName, ctx);
+      return;
   }
 }
 
@@ -103,6 +109,7 @@ function getFirstQuestion(
         { name: 'Start a branch', value: 'init-branch' },
         { name: 'Switch branch', value: 'switch-branch' },
         { name: 'Manage branches', value: 'manage-branches' },
+        { name: 'Manage worktrees', value: 'manage-worktrees' },
         { name: '---', value: '' },
         { name: 'More...', value: 'more' },
         { name: 'Exit', value: 'exit' },
@@ -792,5 +799,360 @@ function listBranchesManage(projectName: string, ctx: InteractiveContext): void 
     console.log(`  ${shortName}`);
     console.log(`    Events: ${Object.keys(branch.events).join(', ') || 'none'}`);
     console.log();
+  }
+}
+
+// Worktree management functions
+async function manageWorktrees(projectName: string, ctx: InteractiveContext): Promise<void> {
+  const { config, log } = ctx;
+  const projects = config.getProjects();
+  const defaults = config.getDefaults();
+
+  if (!(projectName in projects)) {
+    log.error(`Project '${projectName}' not found.`);
+    return;
+  }
+
+  const projectConfig = projects[projectName];
+  const basePath = defaults?.base || '';
+
+  // Resolve project path
+  let projectPath: string;
+  const configPath = File.from(projectConfig.path);
+  if (configPath.path.startsWith('/') || configPath.path.startsWith('~')) {
+    projectPath = configPath.absolutify().path;
+  } else if (basePath) {
+    projectPath = File.from(basePath).absolutify().join(projectConfig.path).path;
+  } else {
+    projectPath = configPath.absolutify().path;
+  }
+
+  const manager = new WorktreeManager(projectPath);
+
+  if (!(await manager.isGitRepository())) {
+    log.error(`'${projectName}' is not a git repository`);
+    return;
+  }
+
+  const worktrees = await manager.list();
+  const nonMainWorktrees = worktrees.filter((wt) => !wt.isMain);
+  const hasWorktrees = nonMainWorktrees.length > 0;
+
+  const choices = [
+    { name: 'List worktrees', value: 'list' },
+    { name: 'Create worktree', value: 'add' },
+    ...(hasWorktrees
+      ? [
+          { name: 'Open worktree', value: 'open' },
+          { name: 'Remove worktree', value: 'remove' },
+          { name: 'Merge worktree', value: 'merge' },
+          { name: 'Create branch from worktree', value: 'branch' },
+        ]
+      : []),
+    { name: 'Back', value: 'back' },
+  ];
+
+  const action = await select({
+    message: `Manage worktrees for '${projectName}':`,
+    choices,
+  });
+
+  switch (action) {
+    case 'list':
+      await listWorktreesManage(projectName, manager);
+      break;
+    case 'add':
+      await addWorktreeManage(projectName, manager, log);
+      break;
+    case 'open':
+      await openWorktreeManage(projectName, manager, config, log);
+      break;
+    case 'remove':
+      await removeWorktreeManage(projectName, manager, log);
+      break;
+    case 'merge':
+      await mergeWorktreeManage(projectName, manager, log);
+      break;
+    case 'branch':
+      await branchWorktreeManage(projectName, manager, log);
+      break;
+    case 'back':
+      return;
+  }
+
+  // Return to manage worktrees menu
+  await manageWorktrees(projectName, ctx);
+}
+
+async function listWorktreesManage(projectName: string, manager: WorktreeManager): Promise<void> {
+  const worktrees = await manager.list();
+  const managedWorktrees = await manager.listManagedWorktrees();
+  const managedPaths = new Set(managedWorktrees.map((wt) => wt.path));
+
+  console.log(chalk.bold(`\nWorktrees for ${projectName}:`));
+  console.log('-'.repeat(60));
+
+  for (const wt of worktrees) {
+    const isManaged = managedPaths.has(wt.path);
+    const mainLabel = wt.isMain ? chalk.gray(' (main)') : '';
+    const externalLabel = !wt.isMain && !isManaged ? chalk.yellow(' (external)') : '';
+    const branchDisplay =
+      wt.branch === '(detached)' ? chalk.yellow(wt.branch) : chalk.green(wt.branch);
+
+    console.log(`  ${chalk.cyan(wt.name)}${mainLabel}${externalLabel}`);
+    console.log(`    Branch: ${branchDisplay}`);
+    console.log(`    Path:   ${chalk.gray(wt.path)}`);
+    console.log();
+  }
+}
+
+async function addWorktreeManage(
+  projectName: string,
+  manager: WorktreeManager,
+  log: Logger
+): Promise<void> {
+  const branchName = await input({
+    message: 'Branch name for the new worktree:',
+    validate: (value) => {
+      if (!value.trim()) return 'Branch name is required';
+      return true;
+    },
+  });
+
+  const branchExists = await manager.branchExists(branchName);
+  let baseBranch: string | undefined;
+
+  if (!branchExists) {
+    const branches = await manager.getBranches();
+    const currentBranch = await manager.getCurrentBranch();
+
+    baseBranch = await select({
+      message: `Branch '${branchName}' doesn't exist. Create from which branch?`,
+      choices: branches.map((b) => ({
+        name: b === currentBranch ? `${b} (current)` : b,
+        value: b,
+      })),
+      default: currentBranch,
+    });
+  }
+
+  try {
+    const worktree = await manager.add({ branch: branchName, baseBranch });
+    log.info(`Worktree created at ${worktree.path}`);
+
+    // Run post-setup hook if exists
+    if (manager.hasSetupHook()) {
+      const runHook = await confirm({
+        message: 'Run post-setup hook?',
+        default: true,
+      });
+
+      if (runHook) {
+        try {
+          await manager.runPostSetupHook(worktree.path);
+          log.info('Post-setup hook completed');
+        } catch (error) {
+          log.warn(`Post-setup hook failed: ${(error as Error).message}`);
+        }
+      }
+    }
+  } catch (error) {
+    log.error(`Failed to create worktree: ${(error as Error).message}`);
+  }
+}
+
+async function openWorktreeManage(
+  projectName: string,
+  manager: WorktreeManager,
+  config: Config,
+  log: Logger
+): Promise<void> {
+  const worktrees = await manager.list();
+  const nonMainWorktrees = worktrees.filter((wt) => !wt.isMain);
+
+  if (nonMainWorktrees.length === 0) {
+    log.info('No worktrees to open.');
+    return;
+  }
+
+  const worktreeName = await select({
+    message: 'Select worktree to open:',
+    choices: nonMainWorktrees.map((wt) => ({
+      name: `${wt.name} (${wt.branch})`,
+      value: wt.name,
+    })),
+  });
+
+  // Import and call the open worktree command logic
+  const { runWorktreeOpen } = await import('./worktrees/open.js');
+  await runWorktreeOpen(projectName, worktreeName, {}, { config, log });
+}
+
+async function removeWorktreeManage(
+  projectName: string,
+  manager: WorktreeManager,
+  log: Logger
+): Promise<void> {
+  const worktrees = await manager.list();
+  const nonMainWorktrees = worktrees.filter((wt) => !wt.isMain);
+
+  if (nonMainWorktrees.length === 0) {
+    log.info('No worktrees to remove.');
+    return;
+  }
+
+  const worktreeName = await select({
+    message: 'Select worktree to remove:',
+    choices: nonMainWorktrees.map((wt) => ({
+      name: `${wt.name} (${wt.branch})`,
+      value: wt.name,
+    })),
+  });
+
+  const hasChanges = await manager.hasUncommittedChanges(worktreeName);
+  if (hasChanges) {
+    log.warn(`Worktree '${worktreeName}' has uncommitted changes.`);
+    const force = await confirm({
+      message: 'Force removal and lose changes?',
+      default: false,
+    });
+
+    if (!force) {
+      log.info('Removal cancelled.');
+      return;
+    }
+  }
+
+  const confirmed = await confirm({
+    message: `Remove worktree '${worktreeName}'?`,
+    default: true,
+  });
+
+  if (confirmed) {
+    try {
+      await manager.remove(worktreeName, true);
+      log.info(`Worktree '${worktreeName}' removed.`);
+    } catch (error) {
+      log.error(`Failed to remove worktree: ${(error as Error).message}`);
+    }
+  }
+}
+
+async function mergeWorktreeManage(
+  projectName: string,
+  manager: WorktreeManager,
+  log: Logger
+): Promise<void> {
+  const worktrees = await manager.list();
+  const nonMainWorktrees = worktrees.filter((wt) => !wt.isMain && wt.branch !== '(detached)');
+
+  if (nonMainWorktrees.length === 0) {
+    log.info('No worktrees to merge (detached worktrees must be branched first).');
+    return;
+  }
+
+  const worktreeName = await select({
+    message: 'Select worktree to merge:',
+    choices: nonMainWorktrees.map((wt) => ({
+      name: `${wt.name} (${wt.branch})`,
+      value: wt.name,
+    })),
+  });
+
+  const worktree = await manager.get(worktreeName);
+  if (!worktree) return;
+
+  const hasChanges = await manager.hasUncommittedChanges(worktreeName);
+  if (hasChanges) {
+    log.error(`Worktree '${worktreeName}' has uncommitted changes. Commit or stash them first.`);
+    return;
+  }
+
+  const branches = await manager.getBranches();
+  const targetBranches = branches.filter((b) => b !== worktree.branch);
+
+  const commonTargets = ['main', 'master', 'develop', 'dev'];
+  const defaultTarget = commonTargets.find((t) => targetBranches.includes(t)) || targetBranches[0];
+
+  const targetBranch = await select({
+    message: `Merge '${worktree.branch}' into which branch?`,
+    choices: targetBranches.map((b) => ({ name: b, value: b })),
+    default: defaultTarget,
+  });
+
+  const squash = await confirm({
+    message: 'Use squash merge?',
+    default: false,
+  });
+
+  const removeAfter = await confirm({
+    message: 'Remove worktree after merge?',
+    default: true,
+  });
+
+  try {
+    await manager.merge(worktreeName, { targetBranch, squash });
+    log.info(`Merged '${worktree.branch}' into '${targetBranch}'`);
+
+    if (removeAfter) {
+      await manager.remove(worktreeName, true);
+      log.info(`Worktree '${worktreeName}' removed.`);
+    }
+  } catch (error) {
+    log.error(`Merge failed: ${(error as Error).message}`);
+  }
+}
+
+async function branchWorktreeManage(
+  projectName: string,
+  manager: WorktreeManager,
+  log: Logger
+): Promise<void> {
+  const worktrees = await manager.list();
+  const detachedWorktrees = worktrees.filter((wt) => !wt.isMain);
+
+  if (detachedWorktrees.length === 0) {
+    log.info('No worktrees available.');
+    return;
+  }
+
+  const worktreeName = await select({
+    message: 'Select worktree to create branch from:',
+    choices: detachedWorktrees.map((wt) => ({
+      name: `${wt.name} (${wt.branch})`,
+      value: wt.name,
+    })),
+  });
+
+  const worktree = await manager.get(worktreeName);
+  if (!worktree) return;
+
+  const branchName = await input({
+    message: 'New branch name:',
+    validate: async (value) => {
+      if (!value.trim()) return 'Branch name is required';
+      if (await manager.branchExists(value)) return 'Branch already exists';
+      return true;
+    },
+  });
+
+  const { simpleGit } = await import('simple-git');
+  const worktreeGit = simpleGit(worktree.path);
+
+  try {
+    await worktreeGit.checkoutLocalBranch(branchName);
+    log.info(`Branch '${branchName}' created and checked out`);
+
+    const push = await confirm({
+      message: 'Push to origin for PR?',
+      default: true,
+    });
+
+    if (push) {
+      await worktreeGit.push('origin', branchName, ['--set-upstream']);
+      log.info(`Pushed to origin/${branchName}`);
+    }
+  } catch (error) {
+    log.error(`Failed to create branch: ${(error as Error).message}`);
   }
 }
