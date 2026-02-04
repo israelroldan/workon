@@ -5,7 +5,8 @@ import { select, confirm } from '@inquirer/prompts';
 import type { Config } from '../../lib/config.js';
 import type { Logger } from '../../types/index.js';
 import { WorktreeManager } from '../../lib/worktree.js';
-import { resolveProjectPath } from './utils.js';
+import { resolveProjectFromCwd, promptToRegisterProject, type ProjectContext } from './utils.js';
+import { blockIfInWorktree } from './index.js';
 
 interface WorktreesContext {
   config: Config;
@@ -24,24 +25,36 @@ export function createAddCommand(ctx: WorktreesContext): Command {
 
   return new Command('add')
     .description('Create a new worktree for a branch')
-    .argument('<project>', 'Project name')
     .argument('<branch>', 'Branch name for the worktree')
     .option('-b, --base <branch>', 'Base branch to create new branch from')
     .option('-f, --force', 'Overwrite existing worktree')
     .option('-o, --open', 'Open the worktree after creation')
     .option('--no-hook', 'Skip running the post-setup hook')
-    .action(async (project: string, branch: string, options: AddOptions) => {
-      const projectPath = resolveProjectPath(project, config, log);
-      if (!projectPath) {
+    .action(async (branch: string, options: AddOptions) => {
+      const projectCtx = await resolveProjectFromCwd(config, log);
+
+      if (!projectCtx) {
+        log.error('Not in a git repository. Run this command from within a git project.');
         process.exit(1);
       }
 
+      // Block if running from inside a worktree
+      if (blockIfInWorktree(projectCtx, log)) {
+        process.exit(1);
+      }
+
+      // For full functionality (open session), we need registration
+      if (!projectCtx.isRegistered) {
+        const result = await promptToRegisterProject(projectCtx.projectPath, config, log);
+        if (result) {
+          projectCtx.projectName = result.projectName;
+          projectCtx.projectConfig = result.projectConfig;
+          projectCtx.isRegistered = true;
+        }
+      }
+
+      const { projectPath, projectName } = projectCtx;
       const manager = new WorktreeManager(projectPath);
-
-      if (!(await manager.isGitRepository())) {
-        log.error(`'${project}' is not a git repository`);
-        process.exit(1);
-      }
 
       // If no base branch specified and branch doesn't exist, ask user
       const branchExists = await manager.branchExists(branch);
@@ -94,22 +107,29 @@ export function createAddCommand(ctx: WorktreesContext): Command {
         console.log(`  Branch: ${chalk.green(worktree.branch)}`);
         console.log(`  Path:   ${chalk.gray(worktree.path)}`);
 
-        // Ask to open if --open flag or prompt
-        if (options.open) {
-          await openWorktreeSession(project, worktree.name, config, log);
-        } else {
-          const shouldOpen = await confirm({
-            message: 'Open workon session in this worktree?',
-            default: true,
-          });
-
-          if (shouldOpen) {
-            await openWorktreeSession(project, worktree.name, config, log);
+        // Ask to open if --open flag or prompt (only if registered)
+        if (projectCtx.isRegistered && projectName) {
+          if (options.open) {
+            await openWorktreeSession(projectCtx, worktree.name, config, log);
           } else {
-            console.log(
-              `\nTo open later: ${chalk.cyan(`workon worktrees ${project} open ${worktree.name}`)}`
-            );
+            const shouldOpen = await confirm({
+              message: 'Open workon session in this worktree?',
+              default: true,
+            });
+
+            if (shouldOpen) {
+              await openWorktreeSession(projectCtx, worktree.name, config, log);
+            } else {
+              console.log(
+                `\nTo open later: ${chalk.cyan(`workon worktrees open ${worktree.name}`)}`
+              );
+            }
           }
+        } else {
+          console.log(
+            `\n${chalk.yellow('Note:')} Register this project to enable full workon sessions.`
+          );
+          console.log(`  cd ${worktree.path}`);
         }
       } catch (error) {
         spinner.fail(`Failed to create worktree: ${(error as Error).message}`);
@@ -119,12 +139,16 @@ export function createAddCommand(ctx: WorktreesContext): Command {
 }
 
 async function openWorktreeSession(
-  project: string,
+  projectCtx: ProjectContext,
   worktreeName: string,
   config: Config,
   log: Logger
 ): Promise<void> {
+  if (!projectCtx.projectName) {
+    log.warn('Cannot open session: project is not registered.');
+    return;
+  }
   // Import and call the open worktree command logic
   const { runWorktreeOpen } = await import('./open.js');
-  await runWorktreeOpen(project, worktreeName, {}, { config, log });
+  await runWorktreeOpen(projectCtx, worktreeName, {}, { config, log });
 }

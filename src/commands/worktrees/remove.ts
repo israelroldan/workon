@@ -1,12 +1,14 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
+import path from 'path';
 import { confirm } from '@inquirer/prompts';
 import type { Config } from '../../lib/config.js';
 import type { Logger } from '../../types/index.js';
 import { WorktreeManager } from '../../lib/worktree.js';
 import { TmuxManager } from '../../lib/tmux.js';
-import { resolveProjectPath } from './utils.js';
+import { resolveProjectFromCwd } from './utils.js';
+import { blockIfInWorktree } from './index.js';
 
 interface WorktreesContext {
   config: Config;
@@ -23,26 +25,29 @@ export function createRemoveCommand(ctx: WorktreesContext): Command {
 
   return new Command('remove')
     .description('Remove a worktree')
-    .argument('<project>', 'Project name')
     .argument('<name>', 'Worktree name')
     .option('-f, --force', 'Force removal even with uncommitted changes')
     .option('-y, --yes', 'Skip confirmation prompt')
-    .action(async (project: string, name: string, options: RemoveOptions) => {
-      const projectPath = resolveProjectPath(project, config, log);
-      if (!projectPath) {
+    .action(async (name: string, options: RemoveOptions) => {
+      const projectCtx = await resolveProjectFromCwd(config, log);
+
+      if (!projectCtx) {
+        log.error('Not in a git repository. Run this command from within a git project.');
         process.exit(1);
       }
 
+      // Block if running from inside a worktree
+      if (blockIfInWorktree(projectCtx, log)) {
+        process.exit(1);
+      }
+
+      const { projectPath, projectName } = projectCtx;
+      const displayName = projectName || path.basename(projectPath);
       const manager = new WorktreeManager(projectPath);
-
-      if (!(await manager.isGitRepository())) {
-        log.error(`'${project}' is not a git repository`);
-        process.exit(1);
-      }
 
       const worktree = await manager.get(name);
       if (!worktree) {
-        log.error(`Worktree '${name}' not found for project '${project}'`);
+        log.error(`Worktree '${name}' not found for '${displayName}'`);
         const worktrees = await manager.listManagedWorktrees();
         if (worktrees.length > 0) {
           log.info('Available worktrees:');
@@ -99,7 +104,7 @@ export function createRemoveCommand(ctx: WorktreesContext): Command {
 
       // Kill any associated tmux session
       const tmux = new TmuxManager();
-      const sessionName = tmux.getWorktreeSessionName(project, name);
+      const sessionName = tmux.getWorktreeSessionName(displayName, name);
       if (await tmux.sessionExists(sessionName)) {
         log.debug(`Killing tmux session: ${sessionName}`);
         await tmux.killSession(sessionName);

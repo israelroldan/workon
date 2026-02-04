@@ -1,5 +1,6 @@
 import { select, input, checkbox, confirm } from '@inquirer/prompts';
 import File from 'phylo';
+import path from 'path';
 import deepAssign from 'deep-assign';
 import chalk from 'chalk';
 import type { Config } from '../lib/config.js';
@@ -9,6 +10,7 @@ import { ProjectEnvironment } from '../lib/environment.js';
 import { EventRegistry } from '../events/registry.js';
 import { IDE_CHOICES } from '../types/constants.js';
 import { WorktreeManager } from '../lib/worktree.js';
+import type { ProjectContext } from './worktrees/utils.js';
 
 interface InteractiveContext {
   config: Config;
@@ -983,9 +985,39 @@ async function openWorktreeManage(
     })),
   });
 
+  // Build ProjectContext for runWorktreeOpen
+  const projects = config.getProjects();
+  const defaults = config.getDefaults();
+  const projectConfig = projects[projectName];
+  const basePath = defaults?.base || '';
+
+  let projectPath: string;
+  const configPath = File.from(projectConfig.path);
+  if (configPath.path.startsWith('/') || configPath.path.startsWith('~')) {
+    projectPath = configPath.absolutify().path;
+  } else if (basePath) {
+    projectPath = File.from(basePath).absolutify().join(projectConfig.path).path;
+  } else {
+    projectPath = configPath.absolutify().path;
+  }
+
+  const projectCtx: ProjectContext = {
+    projectPath,
+    projectName,
+    projectConfig,
+    isRegistered: true,
+    worktreeInfo: {
+      isWorktree: false,
+      worktreePath: null,
+      mainRepoPath: projectPath,
+      worktreeName: null,
+      branch: null,
+    },
+  };
+
   // Import and call the open worktree command logic
   const { runWorktreeOpen } = await import('./worktrees/open.js');
-  await runWorktreeOpen(projectName, worktreeName, {}, { config, log });
+  await runWorktreeOpen(projectCtx, worktreeName, {}, { config, log });
 }
 
 async function removeWorktreeManage(
@@ -1155,4 +1187,78 @@ async function branchWorktreeManage(
   } catch (error) {
     log.error(`Failed to create branch: ${(error as Error).message}`);
   }
+}
+
+/**
+ * Interactive worktree management using ProjectContext from CWD detection.
+ * This is the entry point for `workon worktrees` when no subcommand is provided.
+ */
+export async function manageWorktreesInteractive(
+  projectCtx: ProjectContext,
+  ctx: { config: Config; log: Logger }
+): Promise<void> {
+  const { config, log } = ctx;
+  const { projectPath, projectName } = projectCtx;
+  const displayName = projectName || path.basename(projectPath);
+
+  const manager = new WorktreeManager(projectPath);
+
+  if (!(await manager.isGitRepository())) {
+    log.error(`'${displayName}' is not a git repository`);
+    return;
+  }
+
+  const worktrees = await manager.list();
+  const nonMainWorktrees = worktrees.filter((wt) => !wt.isMain);
+  const hasWorktrees = nonMainWorktrees.length > 0;
+
+  const choices = [
+    { name: 'List worktrees', value: 'list' },
+    { name: 'Create worktree', value: 'add' },
+    ...(hasWorktrees
+      ? [
+          { name: 'Open worktree', value: 'open' },
+          { name: 'Remove worktree', value: 'remove' },
+          { name: 'Merge worktree', value: 'merge' },
+          { name: 'Create branch from worktree', value: 'branch' },
+        ]
+      : []),
+    { name: 'Exit', value: 'exit' },
+  ];
+
+  const action = await select({
+    message: `Manage worktrees for '${displayName}':`,
+    choices,
+  });
+
+  switch (action) {
+    case 'list':
+      await listWorktreesManage(displayName, manager);
+      break;
+    case 'add':
+      await addWorktreeManage(displayName, manager, log);
+      break;
+    case 'open':
+      if (projectName) {
+        await openWorktreeManage(projectName, manager, config, log);
+      } else {
+        log.warn('Cannot open worktree session: project is not registered.');
+        log.info(`Register this project first with 'workon add .'`);
+      }
+      break;
+    case 'remove':
+      await removeWorktreeManage(displayName, manager, log);
+      break;
+    case 'merge':
+      await mergeWorktreeManage(displayName, manager, log);
+      break;
+    case 'branch':
+      await branchWorktreeManage(displayName, manager, log);
+      break;
+    case 'exit':
+      return;
+  }
+
+  // Return to manage worktrees menu
+  await manageWorktreesInteractive(projectCtx, ctx);
 }

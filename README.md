@@ -54,17 +54,23 @@ workon --help
 
 ## Quick Start
 
-1. **Create your first project:**
+1. **Add your first project:**
    ```bash
-   workon  # Start interactive mode
+   cd ~/code/myproject
+   workon add .  # Register current directory as a project
    ```
 
-2. **Switch to a project:**
+2. **Or use interactive mode:**
+   ```bash
+   workon  # Start interactive setup wizard
+   ```
+
+3. **Switch to a project:**
    ```bash
    workon myproject  # Automatically cd + open IDE
    ```
 
-3. **List available projects:**
+4. **List available projects:**
    ```bash
    workon config list
    ```
@@ -116,6 +122,23 @@ workon config set projects.myapp.events.ide true
 
 ## Usage Examples
 
+### Adding Projects
+
+```bash
+# Add current directory as a project
+cd ~/code/myproject
+workon add .
+
+# Add with a custom name
+workon add . --name my-awesome-project
+
+# Add with specific IDE
+workon add . --ide idea
+
+# Add a project from any path
+workon add ~/code/another-project
+```
+
 ### Basic Project Switching
 ```bash
 # Switch to project (changes directory + opens IDE)
@@ -127,6 +150,21 @@ workon myproject --shell
 #         code "/path/to/myproject" &
 ```
 
+### Colon Syntax (Run Specific Events)
+
+Use the colon syntax to run only specific events for a project:
+
+```bash
+# Run only the cwd event (just change directory)
+workon myproject:cwd
+
+# Run multiple specific events
+workon myproject:cwd,ide
+
+# Show available events for a project
+workon myproject:help
+```
+
 ### Branch-Specific Configuration
 ```bash
 # Configure different settings for a git branch
@@ -135,29 +173,63 @@ workon myproject#feature-branch
 
 ### Git Worktrees
 
-Manage git worktrees with full tmux integration:
+Manage git worktrees with full tmux integration. There are two commands:
+
+- `workon worktrees` - Manage worktrees (run from the **main repository**)
+- `workon worktree` - Operate on the **current worktree** you're inside
+
+#### Managing Worktrees (from main repo)
 
 ```bash
-# List worktrees for a project
-workon worktrees myproject
+cd ~/code/myproject
+
+# Show interactive worktree menu
+workon worktrees
+
+# List worktrees
+workon worktrees list
 
 # Create a new worktree
-workon worktrees add myproject feature-branch
+workon worktrees add feature-branch
 
 # Open workon session in a worktree (creates tmux session)
-workon worktrees open myproject feature-branch
+workon worktrees open feature-branch
 
 # Remove a worktree
-workon worktrees remove myproject feature-branch
+workon worktrees remove feature-branch
 
 # Merge worktree branch and remove
-workon worktrees merge myproject feature-branch
+workon worktrees merge feature-branch
 
 # Create branch from detached HEAD (for PR workflow)
-workon worktrees branch myproject my-worktree new-branch-name --push
+workon worktrees branch my-worktree new-branch-name --push
 ```
 
-Worktrees created by workon are stored in `.worktrees/` inside the project. You can also use existing worktrees created elsewhere - they'll show as "(external)" in the list.
+#### Operating on Current Worktree (from inside a worktree)
+
+When you're inside a worktree, use `workon worktree` (singular):
+
+```bash
+cd ~/code/myproject/.worktrees/feature-branch
+
+# Show status of current worktree
+workon worktree
+workon worktree status
+
+# Merge this worktree's branch into main/master
+workon worktree merge
+
+# Remove this worktree (shows instructions to exit first)
+workon worktree remove
+```
+
+If you run `workon worktrees` from inside a worktree, you'll get a helpful error directing you to use `workon worktree` instead.
+
+#### Notes
+
+- If you run worktree commands from an unregistered git repository, workon will prompt you to register it first
+- Worktrees created by workon are stored in `.worktrees/` inside the project
+- External worktrees (created elsewhere) show as "(external)" in the list
 
 #### Post-Setup Hook
 
