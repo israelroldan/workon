@@ -72,11 +72,15 @@ export async function detectWorktreeContext(
         branch = '(detached)';
       }
 
+      // Find the worktree name by querying git worktree list from main repo
+      // This ensures we get the correct name that WorktreeManager.get() expects
+      const worktreeName = await findWorktreeNameByPath(mainRepoPath, worktreeRoot);
+
       return {
         isWorktree: true,
         worktreePath: worktreeRoot,
         mainRepoPath,
-        worktreeName: path.basename(worktreeRoot),
+        worktreeName,
         branch,
       };
     } else {
@@ -91,6 +95,60 @@ export async function detectWorktreeContext(
     }
   } catch {
     return null;
+  }
+}
+
+/**
+ * Find a worktree's name by its path by querying git worktree list
+ * Returns the name that WorktreeManager uses (branch-derived for external worktrees)
+ */
+async function findWorktreeNameByPath(
+  mainRepoPath: string,
+  worktreePath: string
+): Promise<string | null> {
+  try {
+    const git = simpleGit(mainRepoPath);
+    const result = await git.raw(['worktree', 'list', '--porcelain']);
+
+    const blocks = result.trim().split('\n\n');
+    const worktreesDir = path.join(mainRepoPath, '.worktrees');
+
+    for (const block of blocks) {
+      if (!block.trim()) continue;
+
+      const lines = block.split('\n');
+      let wtPath = '';
+      let branch = '';
+
+      for (const line of lines) {
+        if (line.startsWith('worktree ')) {
+          wtPath = line.substring('worktree '.length);
+        } else if (line.startsWith('branch ')) {
+          branch = line.substring('branch refs/heads/'.length);
+        } else if (line === 'detached') {
+          branch = '(detached)';
+        }
+      }
+
+      // Check if this is the worktree we're looking for
+      if (wtPath === worktreePath) {
+        // Use the same naming logic as WorktreeManager.parseWorktreeList
+        if (wtPath.startsWith(worktreesDir)) {
+          // Managed worktree under .worktrees/
+          return path.basename(wtPath);
+        } else {
+          // External worktree - use branch name converted to dir format, or basename
+          return branch && branch !== '(detached)'
+            ? branch.replace(/\//g, '-')
+            : path.basename(wtPath);
+        }
+      }
+    }
+
+    // Fallback to basename if not found (shouldn't happen)
+    return path.basename(worktreePath);
+  } catch {
+    return path.basename(worktreePath);
   }
 }
 
