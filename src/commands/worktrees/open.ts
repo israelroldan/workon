@@ -1,10 +1,12 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
+import File from 'phylo';
+import path from 'path';
 import type { Config } from '../../lib/config.js';
 import type { Logger, Project } from '../../types/index.js';
 import { WorktreeManager } from '../../lib/worktree.js';
 import { TmuxManager } from '../../lib/tmux.js';
-import { resolveProjectPath } from './utils.js';
+import { resolveProjectFromCwd, promptToRegisterProject, type ProjectContext } from './utils.js';
 import { Project as ProjectClass } from '../../lib/project.js';
 
 interface WorktreesContext {
@@ -22,42 +24,51 @@ export function createOpenCommand(ctx: WorktreesContext): Command {
 
   return new Command('open')
     .description('Open a workon session in a worktree')
-    .argument('<project>', 'Project name')
     .argument('<name>', 'Worktree name')
     .option('-d, --debug', 'Enable debug logging')
     .option('--shell', 'Output shell commands instead of spawning processes')
-    .action(async (project: string, name: string, options: OpenOptions) => {
+    .action(async (name: string, options: OpenOptions) => {
       if (options.debug) {
         log.setLogLevel('debug');
       }
 
-      await runWorktreeOpen(project, name, options, { config, log });
+      const projectCtx = await resolveProjectFromCwd(config, log);
+
+      if (!projectCtx) {
+        log.error('Not in a git repository. Run this command from within a git project.');
+        process.exit(1);
+      }
+
+      // For full tmux layout, we need registration (for events config)
+      if (!projectCtx.isRegistered) {
+        log.warn('Project is not registered. Opening with basic shell layout.');
+        const shouldRegister = await promptToRegisterProject(projectCtx.projectPath, config, log);
+        if (shouldRegister) {
+          projectCtx.projectName = shouldRegister.projectName;
+          projectCtx.projectConfig = shouldRegister.projectConfig;
+          projectCtx.isRegistered = true;
+        }
+      }
+
+      await runWorktreeOpen(projectCtx, name, options, { config, log });
     });
 }
 
 export async function runWorktreeOpen(
-  projectName: string,
+  projectCtx: ProjectContext,
   worktreeName: string,
   options: OpenOptions,
   ctx: WorktreesContext
 ): Promise<void> {
   const { config, log } = ctx;
-
-  const projectPath = resolveProjectPath(projectName, config, log);
-  if (!projectPath) {
-    process.exit(1);
-  }
+  const { projectPath, projectName, projectConfig, isRegistered } = projectCtx;
+  const displayName = projectName || path.basename(projectPath);
 
   const manager = new WorktreeManager(projectPath);
 
-  if (!(await manager.isGitRepository())) {
-    log.error(`'${projectName}' is not a git repository`);
-    process.exit(1);
-  }
-
   const worktree = await manager.get(worktreeName);
   if (!worktree) {
-    log.error(`Worktree '${worktreeName}' not found for project '${projectName}'`);
+    log.error(`Worktree '${worktreeName}' not found for '${displayName}'`);
     const worktrees = await manager.listManagedWorktrees();
     if (worktrees.length > 0) {
       log.info('Available worktrees:');
@@ -66,20 +77,9 @@ export async function runWorktreeOpen(
     process.exit(1);
   }
 
-  // Get project configuration and create a modified project for the worktree
-  const projects = config.getProjects();
-  const projectConfig = projects[projectName];
   const defaults = config.getDefaults();
-
-  // Create a project instance with the worktree path
-  const project = new ProjectClass(projectName, projectConfig, defaults) as unknown as Project;
-  // Override the path to point to the worktree by using any to bypass type checking
-  // since we're replacing the phylo File object with a simple path wrapper
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (project as any).path = { path: worktree.path, absolutePath: () => worktree.path };
-
   const tmux = new TmuxManager();
-  const sessionName = tmux.getWorktreeSessionName(projectName, worktreeName);
+  const sessionName = tmux.getWorktreeSessionName(displayName, worktreeName);
 
   log.debug(`Opening worktree: ${worktreeName}`);
   log.debug(`Worktree path: ${worktree.path}`);
@@ -87,10 +87,23 @@ export async function runWorktreeOpen(
 
   const isShellMode = options.shell || false;
 
-  // Determine layout based on project events (similar to open.ts)
-  const events = project.events || {};
-  const hasClaudeEvent = !!events.claude;
-  const hasNpmEvent = !!events.npm;
+  // Determine layout based on project events (if registered)
+  let project: Project | null = null;
+  let hasClaudeEvent = false;
+  let hasNpmEvent = false;
+
+  if (isRegistered && projectName && projectConfig) {
+    // Create a project instance with the worktree path
+    project = new ProjectClass(projectName, projectConfig, defaults) as unknown as Project;
+    // Override the internal _path directly to bypass the setter which would join with base
+    // The worktree path is already absolute, so we just need to wrap it in a phylo File object
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (project as any)._path = File.from(worktree.path).absolutify();
+
+    const events = project.events || {};
+    hasClaudeEvent = !!events.claude;
+    hasNpmEvent = !!events.npm;
+  }
 
   if (isShellMode) {
     const shellCommands = await buildWorktreeShellCommands(
@@ -125,7 +138,7 @@ export async function runWorktreeOpen(
 }
 
 async function buildWorktreeShellCommands(
-  project: Project,
+  project: Project | null,
   worktreePath: string,
   sessionName: string,
   tmux: TmuxManager,
@@ -133,16 +146,16 @@ async function buildWorktreeShellCommands(
 ): Promise<string[]> {
   const { hasClaudeEvent, hasNpmEvent } = eventFlags;
 
-  // Get claude args if claude is enabled
-  const claudeArgs = hasClaudeEvent ? getClaudeArgs(project) : [];
-  const npmCommand = hasNpmEvent ? await getNpmCommand(project) : '';
+  // Get claude args if claude is enabled and project exists
+  const claudeArgs = hasClaudeEvent && project ? getClaudeArgs(project) : [];
+  const npmCommand = hasNpmEvent && project ? await getNpmCommand(project) : '';
 
   // Build tmux commands using a custom session name
-  if (hasClaudeEvent && hasNpmEvent) {
+  if (hasClaudeEvent && hasNpmEvent && project) {
     return buildThreePaneCommands(sessionName, worktreePath, claudeArgs, npmCommand, tmux);
-  } else if (hasClaudeEvent) {
+  } else if (hasClaudeEvent && project) {
     return buildSplitClaudeCommands(sessionName, worktreePath, claudeArgs, tmux);
-  } else if (hasNpmEvent) {
+  } else if (hasNpmEvent && project) {
     return buildTwoPaneNpmCommands(sessionName, worktreePath, npmCommand, tmux);
   } else {
     // Just open a shell in the worktree
@@ -151,7 +164,7 @@ async function buildWorktreeShellCommands(
 }
 
 async function createWorktreeTmuxSession(
-  project: Project,
+  project: Project | null,
   worktreePath: string,
   sessionName: string,
   tmux: TmuxManager,
@@ -164,15 +177,16 @@ async function createWorktreeTmuxSession(
     await tmux.killSession(sessionName);
   }
 
-  const claudeArgs = hasClaudeEvent ? getClaudeArgs(project) : [];
-  const npmCommand = hasNpmEvent ? await getNpmCommand(project) : '';
+  // Get claude args if claude is enabled and project exists
+  const claudeArgs = hasClaudeEvent && project ? getClaudeArgs(project) : [];
+  const npmCommand = hasNpmEvent && project ? await getNpmCommand(project) : '';
 
   // Create appropriate session based on events
-  if (hasClaudeEvent && hasNpmEvent) {
+  if (hasClaudeEvent && hasNpmEvent && project) {
     await createThreePaneSession(sessionName, worktreePath, claudeArgs, npmCommand);
-  } else if (hasClaudeEvent) {
+  } else if (hasClaudeEvent && project) {
     await createSplitClaudeSession(sessionName, worktreePath, claudeArgs);
-  } else if (hasNpmEvent) {
+  } else if (hasNpmEvent && project) {
     await createTwoPaneNpmSession(sessionName, worktreePath, npmCommand);
   } else {
     await createSimpleSession(sessionName, worktreePath);

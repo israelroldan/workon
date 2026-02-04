@@ -1,9 +1,10 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
+import path from 'path';
 import type { Config } from '../../lib/config.js';
 import type { Logger } from '../../types/index.js';
 import { WorktreeManager } from '../../lib/worktree.js';
-import { resolveProjectPath } from './utils.js';
+import { resolveProjectFromCwd } from './utils.js';
 
 interface WorktreesContext {
   config: Config;
@@ -14,21 +15,19 @@ export function createListCommand(ctx: WorktreesContext): Command {
   const { config, log } = ctx;
 
   return new Command('list')
-    .description('List worktrees for a project')
-    .argument('<project>', 'Project name')
+    .description('List worktrees for the current project')
     .option('-a, --all', 'Show all worktrees (including main)')
-    .action(async (project: string, options: { all?: boolean }) => {
-      const projectPath = resolveProjectPath(project, config, log);
-      if (!projectPath) {
+    .action(async (options: { all?: boolean }) => {
+      const projectCtx = await resolveProjectFromCwd(config, log);
+
+      if (!projectCtx) {
+        log.error('Not in a git repository. Run this command from within a git project.');
         process.exit(1);
       }
 
+      const { projectPath, projectName } = projectCtx;
+      const displayName = projectName || path.basename(projectPath);
       const manager = new WorktreeManager(projectPath);
-
-      if (!(await manager.isGitRepository())) {
-        log.error(`'${project}' is not a git repository`);
-        process.exit(1);
-      }
 
       const allWorktrees = await manager.list();
       const managedWorktrees = await manager.listManagedWorktrees();
@@ -40,13 +39,13 @@ export function createListCommand(ctx: WorktreesContext): Command {
         if (options.all) {
           log.info('No worktrees found.');
         } else {
-          log.info(`No worktrees found for project '${project}'.`);
-          log.info(`Use 'workon worktrees ${project} add <branch>' to create one.`);
+          log.info(`No worktrees found for '${displayName}'.`);
+          log.info(`Use 'workon worktrees add <branch>' to create one.`);
         }
         return;
       }
 
-      console.log(chalk.bold(`\nWorktrees for ${project}:`));
+      console.log(chalk.bold(`\nWorktrees for ${displayName}:`));
       console.log('-'.repeat(60));
 
       for (const wt of worktrees) {

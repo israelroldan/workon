@@ -7,6 +7,7 @@ import { createOpenCommand } from './open.js';
 import { createRemoveCommand } from './remove.js';
 import { createMergeCommand } from './merge.js';
 import { createBranchCommand } from './branch.js';
+import { resolveProjectFromCwd, promptToRegisterProject } from './utils.js';
 
 interface WorktreesContext {
   config: Config;
@@ -14,9 +15,11 @@ interface WorktreesContext {
 }
 
 export function createWorktreesCommand(ctx: WorktreesContext): Command {
-  const command = new Command('worktrees')
-    .description('Manage git worktrees for projects')
-    .argument('<project>', 'Project name');
+  const { config, log } = ctx;
+
+  const command = new Command('worktrees').description(
+    'Manage git worktrees for the current project (run from within a git repository)'
+  );
 
   command.addCommand(createListCommand(ctx));
   command.addCommand(createAddCommand(ctx));
@@ -25,13 +28,30 @@ export function createWorktreesCommand(ctx: WorktreesContext): Command {
   command.addCommand(createMergeCommand(ctx));
   command.addCommand(createBranchCommand(ctx));
 
-  // Default action: show list
-  command.action(async (project: string) => {
-    // Manually invoke list command with the project
-    const listCmd = command.commands.find((c) => c.name() === 'list');
-    if (listCmd) {
-      await listCmd.parseAsync([project], { from: 'user' });
+  // Default action: show interactive menu
+  command.action(async () => {
+    const projectCtx = await resolveProjectFromCwd(config, log);
+
+    if (!projectCtx) {
+      log.error('Not in a git repository. Run this command from within a git project.');
+      process.exit(1);
     }
+
+    // If unregistered, prompt to register
+    if (!projectCtx.isRegistered) {
+      const result = await promptToRegisterProject(projectCtx.projectPath, config, log);
+      if (!result) {
+        log.info(`Tip: You can run 'workon add .' to register this project later.`);
+        process.exit(0);
+      }
+      projectCtx.projectName = result.projectName;
+      projectCtx.projectConfig = result.projectConfig;
+      projectCtx.isRegistered = true;
+    }
+
+    // Show interactive menu
+    const { manageWorktreesInteractive } = await import('../interactive.js');
+    await manageWorktreesInteractive(projectCtx, ctx);
   });
 
   return command;
