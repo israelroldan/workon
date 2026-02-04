@@ -8,6 +8,7 @@ import type { Logger } from '../../types/index.js';
 import { WorktreeManager } from '../../lib/worktree.js';
 import { TmuxManager } from '../../lib/tmux.js';
 import { resolveProjectFromCwd } from './utils.js';
+import { blockIfInWorktree } from './index.js';
 
 interface WorktreesContext {
   config: Config;
@@ -36,6 +37,11 @@ export function createMergeCommand(ctx: WorktreesContext): Command {
 
       if (!projectCtx) {
         log.error('Not in a git repository. Run this command from within a git project.');
+        process.exit(1);
+      }
+
+      // Block if running from inside a worktree
+      if (blockIfInWorktree(projectCtx, log)) {
         process.exit(1);
       }
 

@@ -173,7 +173,12 @@ workon myproject#feature-branch
 
 ### Git Worktrees
 
-Manage git worktrees with full tmux integration. Commands automatically detect the project from your current directory:
+Manage git worktrees with full tmux integration. There are two commands:
+
+- `workon worktrees` - Manage worktrees (run from the **main repository**)
+- `workon worktree` - Operate on the **current worktree** you're inside
+
+#### Managing Worktrees (from main repo)
 
 ```bash
 cd ~/code/myproject
@@ -200,9 +205,31 @@ workon worktrees merge feature-branch
 workon worktrees branch my-worktree new-branch-name --push
 ```
 
-If you run worktree commands from an unregistered git repository, workon will prompt you to register it first.
+#### Operating on Current Worktree (from inside a worktree)
 
-Worktrees created by workon are stored in `.worktrees/` inside the project. You can also use existing worktrees created elsewhere - they'll show as "(external)" in the list.
+When you're inside a worktree, use `workon worktree` (singular):
+
+```bash
+cd ~/code/myproject/.worktrees/feature-branch
+
+# Show status of current worktree
+workon worktree
+workon worktree status
+
+# Merge this worktree's branch into main/master
+workon worktree merge
+
+# Remove this worktree (shows instructions to exit first)
+workon worktree remove
+```
+
+If you run `workon worktrees` from inside a worktree, you'll get a helpful error directing you to use `workon worktree` instead.
+
+#### Notes
+
+- If you run worktree commands from an unregistered git repository, workon will prompt you to register it first
+- Worktrees created by workon are stored in `.worktrees/` inside the project
+- External worktrees (created elsewhere) show as "(external)" in the list
 
 #### Post-Setup Hook
 

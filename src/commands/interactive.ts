@@ -1006,6 +1006,13 @@ async function openWorktreeManage(
     projectName,
     projectConfig,
     isRegistered: true,
+    worktreeInfo: {
+      isWorktree: false,
+      worktreePath: null,
+      mainRepoPath: projectPath,
+      worktreeName: null,
+      branch: null,
+    },
   };
 
   // Import and call the open worktree command logic

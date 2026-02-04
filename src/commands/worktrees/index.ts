@@ -14,11 +14,29 @@ interface WorktreesContext {
   log: Logger;
 }
 
+/**
+ * Check if running from within a worktree and block with helpful message
+ */
+export function blockIfInWorktree(
+  projectCtx: { worktreeInfo: { isWorktree: boolean; worktreeName: string | null } },
+  log: Logger
+): boolean {
+  if (projectCtx.worktreeInfo.isWorktree) {
+    log.error(
+      `You're inside worktree '${projectCtx.worktreeInfo.worktreeName}'. ` +
+        `Run this command from the main project directory.`
+    );
+    log.info(`Tip: Use 'workon worktree' to operate on the current worktree.`);
+    return true;
+  }
+  return false;
+}
+
 export function createWorktreesCommand(ctx: WorktreesContext): Command {
   const { config, log } = ctx;
 
   const command = new Command('worktrees').description(
-    'Manage git worktrees for the current project (run from within a git repository)'
+    'Manage git worktrees for the current project (run from the main repository)'
   );
 
   command.addCommand(createListCommand(ctx));
@@ -34,6 +52,11 @@ export function createWorktreesCommand(ctx: WorktreesContext): Command {
 
     if (!projectCtx) {
       log.error('Not in a git repository. Run this command from within a git project.');
+      process.exit(1);
+    }
+
+    // Block if running from inside a worktree
+    if (blockIfInWorktree(projectCtx, log)) {
       process.exit(1);
     }
 

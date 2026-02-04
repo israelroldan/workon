@@ -8,25 +8,33 @@ import { EventRegistry } from '../../events/registry.js';
 import { IDE_CHOICES } from '../../types/constants.js';
 
 /**
- * Context returned when resolving a project from the current working directory
+ * Context about whether we're inside a git worktree
  */
-export interface ProjectContext {
-  projectPath: string; // Absolute path to git root
-  projectName: string | null; // Name if registered, null otherwise
-  projectConfig: ProjectConfig | null;
-  isRegistered: boolean;
+export interface WorktreeInfo {
+  isWorktree: boolean; // True if we're inside a worktree (not main repo)
+  worktreePath: string | null; // Path to current worktree root (if in worktree)
+  mainRepoPath: string; // Path to main repository
+  worktreeName: string | null; // Name of worktree (directory name)
+  branch: string | null; // Current branch in worktree
 }
 
 /**
- * Resolve the project from the current working directory
- * Finds the git root and checks if it's a registered project
+ * Context returned when resolving a project from the current working directory
  */
-export async function resolveProjectFromCwd(
-  config: Config,
-  log: Logger
-): Promise<ProjectContext | null> {
-  const cwd = process.cwd();
+export interface ProjectContext {
+  projectPath: string; // Absolute path to main repo (even if in worktree)
+  projectName: string | null; // Name if registered, null otherwise
+  projectConfig: ProjectConfig | null;
+  isRegistered: boolean;
+  worktreeInfo: WorktreeInfo; // Info about worktree context
+}
 
+/**
+ * Detect if we're inside a git worktree and get context about it
+ */
+export async function detectWorktreeContext(
+  cwd: string = process.cwd()
+): Promise<WorktreeInfo | null> {
   try {
     const git = simpleGit(cwd);
 
@@ -36,55 +44,123 @@ export async function resolveProjectFromCwd(
       return null;
     }
 
-    // Get the git root directory
-    const gitRoot = await git.revparse(['--show-toplevel']);
-    const projectPath = gitRoot.trim();
+    // Get the git directory and common directory
+    // --git-dir returns the .git dir for current worktree
+    // --git-common-dir returns the shared .git dir (main repo's .git)
+    const gitDir = (await git.revparse(['--git-dir'])).trim();
+    const gitCommonDir = (await git.revparse(['--git-common-dir'])).trim();
+    const worktreeRoot = (await git.revparse(['--show-toplevel'])).trim();
 
-    // Search registered projects by comparing absolute paths
-    const projects = config.getProjects();
-    const defaults = config.getDefaults();
-    const basePath = defaults?.base || '';
+    // Normalize paths for comparison
+    const normalizedGitDir = path.resolve(cwd, gitDir);
+    const normalizedCommonDir = path.resolve(cwd, gitCommonDir);
 
-    for (const [name, projectConfig] of Object.entries(projects)) {
-      // Skip branch configs (contain #)
-      if (name.includes('#')) continue;
+    // If git-dir and git-common-dir are different, we're in a worktree
+    const isWorktree = normalizedGitDir !== normalizedCommonDir;
 
-      // Resolve the configured path to absolute
-      let configuredPath: string;
-      const configPath = File.from(projectConfig.path);
+    if (isWorktree) {
+      // We're in a worktree - find the main repo path
+      // The common dir is inside the main repo's .git folder
+      const mainRepoPath = path.dirname(normalizedCommonDir);
 
-      if (configPath.path.startsWith('/') || configPath.path.startsWith('~')) {
-        configuredPath = configPath.absolutify().path;
-      } else if (basePath) {
-        configuredPath = File.from(basePath).absolutify().join(projectConfig.path).path;
-      } else {
-        configuredPath = configPath.absolutify().path;
+      // Get current branch
+      let branch: string | null = null;
+      try {
+        branch = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+        if (branch === 'HEAD') branch = '(detached)';
+      } catch {
+        branch = '(detached)';
       }
 
-      // Compare paths
-      if (configuredPath === projectPath) {
-        log.debug(`Found registered project '${name}' at ${projectPath}`);
-        return {
-          projectPath,
-          projectName: name,
-          projectConfig,
-          isRegistered: true,
-        };
-      }
+      return {
+        isWorktree: true,
+        worktreePath: worktreeRoot,
+        mainRepoPath,
+        worktreeName: path.basename(worktreeRoot),
+        branch,
+      };
+    } else {
+      // We're in the main repository
+      return {
+        isWorktree: false,
+        worktreePath: null,
+        mainRepoPath: worktreeRoot,
+        worktreeName: null,
+        branch: null,
+      };
     }
-
-    // Not registered
-    log.debug(`Project at ${projectPath} is not registered`);
-    return {
-      projectPath,
-      projectName: null,
-      projectConfig: null,
-      isRegistered: false,
-    };
-  } catch (error) {
-    log.debug(`Error resolving project from CWD: ${(error as Error).message}`);
+  } catch {
     return null;
   }
+}
+
+/**
+ * Resolve the project from the current working directory
+ * Finds the git root and checks if it's a registered project.
+ * If inside a worktree, uses the main repo path for registration lookup.
+ */
+export async function resolveProjectFromCwd(
+  config: Config,
+  log: Logger
+): Promise<ProjectContext | null> {
+  const cwd = process.cwd();
+
+  // Detect worktree context
+  const worktreeInfo = await detectWorktreeContext(cwd);
+  if (!worktreeInfo) {
+    return null;
+  }
+
+  // Use the main repo path for project lookup (not worktree path)
+  const projectPath = worktreeInfo.mainRepoPath;
+
+  if (worktreeInfo.isWorktree) {
+    log.debug(`Inside worktree '${worktreeInfo.worktreeName}', main repo at ${projectPath}`);
+  }
+
+  // Search registered projects by comparing absolute paths
+  const projects = config.getProjects();
+  const defaults = config.getDefaults();
+  const basePath = defaults?.base || '';
+
+  for (const [name, projectConfig] of Object.entries(projects)) {
+    // Skip branch configs (contain #)
+    if (name.includes('#')) continue;
+
+    // Resolve the configured path to absolute
+    let configuredPath: string;
+    const configPath = File.from(projectConfig.path);
+
+    if (configPath.path.startsWith('/') || configPath.path.startsWith('~')) {
+      configuredPath = configPath.absolutify().path;
+    } else if (basePath) {
+      configuredPath = File.from(basePath).absolutify().join(projectConfig.path).path;
+    } else {
+      configuredPath = configPath.absolutify().path;
+    }
+
+    // Compare paths
+    if (configuredPath === projectPath) {
+      log.debug(`Found registered project '${name}' at ${projectPath}`);
+      return {
+        projectPath,
+        projectName: name,
+        projectConfig,
+        isRegistered: true,
+        worktreeInfo,
+      };
+    }
+  }
+
+  // Not registered
+  log.debug(`Project at ${projectPath} is not registered`);
+  return {
+    projectPath,
+    projectName: null,
+    projectConfig: null,
+    isRegistered: false,
+    worktreeInfo,
+  };
 }
 
 /**
