@@ -1,6 +1,6 @@
 {
   "name": "workon",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "Work on something great!",
   "type": "module",
   "main": "./dist/index.cjs",

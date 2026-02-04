@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.4.0](https://github.com/israelroldan/workon/compare/v3.3.0...v3.4.0) (2026-02-04)
+
+
+### Features
+
+* simplify worktrees command to detect project from CWD ([#28](https://github.com/israelroldan/workon/issues/28)) ([31703c8](https://github.com/israelroldan/workon/commit/31703c82818efe5a1772146a3e9fc2f29a4900dd))
+
 ## [3.3.0](https://github.com/israelroldan/workon/compare/v3.2.4...v3.3.0) (2026-02-03)
 
 
