@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.5.0](https://github.com/israelroldan/workon/compare/v3.4.0...v3.5.0) (2026-02-05)
+
+
+### Features
+
+* store worktrees in global ~/.workon/worktrees directory ([#31](https://github.com/israelroldan/workon/issues/31)) ([f03f91b](https://github.com/israelroldan/workon/commit/f03f91be82113ccdb554f3463f7911258013e916))
+
 ## [3.4.0](https://github.com/israelroldan/workon/compare/v3.3.0...v3.4.0) (2026-02-04)
 
 
