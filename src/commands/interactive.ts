@@ -1016,8 +1016,9 @@ async function openWorktreeManage(
   };
 
   // Import and call the open worktree command logic
+  // Use attach: false since we're in interactive mode and can't properly hand off the terminal
   const { runWorktreeOpen } = await import('./worktrees/open.js');
-  await runWorktreeOpen(projectCtx, worktreeName, {}, { config, log });
+  await runWorktreeOpen(projectCtx, worktreeName, { attach: false }, { config, log });
 }
 
 async function removeWorktreeManage(

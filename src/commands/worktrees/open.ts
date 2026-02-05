@@ -18,6 +18,7 @@ interface WorktreesContext {
 interface OpenOptions {
   debug?: boolean;
   shell?: boolean;
+  attach?: boolean; // Default true, set false to create session without attaching
 }
 
 export function createOpenCommand(ctx: WorktreesContext): Command {
@@ -111,6 +112,8 @@ export async function runWorktreeOpen(
     hasNpmEvent = !!events.npm;
   }
 
+  const shouldAttach = options.attach !== false; // Default to true
+
   if (isShellMode) {
     const shellCommands = await buildWorktreeShellCommands(
       project,
@@ -127,10 +130,20 @@ export async function runWorktreeOpen(
           hasClaudeEvent,
           hasNpmEvent,
         });
-        await tmux.attachToSession(sessionName);
-        console.log(
-          chalk.green(`Opened worktree '${worktreeName}' in tmux session '${sessionName}'`)
-        );
+
+        if (shouldAttach) {
+          await tmux.attachToSession(sessionName);
+          console.log(
+            chalk.green(`Opened worktree '${worktreeName}' in tmux session '${sessionName}'`)
+          );
+        } else {
+          // Session created but not attached - return session info for caller to handle
+          console.log(
+            chalk.green(`\nCreated tmux session '${sessionName}' for worktree '${worktreeName}'`)
+          );
+          console.log(`\nTo attach to this session, run:`);
+          console.log(chalk.cyan(`  tmux attach -t '${sessionName}'`));
+        }
       } catch (error) {
         log.error(`Failed to create tmux session: ${(error as Error).message}`);
         process.exit(1);
