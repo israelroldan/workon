@@ -70,7 +70,7 @@ export async function runWorktreeOpen(
   const { projectPath, projectName, projectConfig, isRegistered } = projectCtx;
   const displayName = projectName || path.basename(projectPath);
 
-  const manager = new WorktreeManager(projectPath);
+  const manager = new WorktreeManager(projectPath, projectName ?? undefined);
 
   const worktree = await manager.get(worktreeName);
   if (!worktree) {

@@ -1,5 +1,6 @@
 import File from 'phylo';
 import path from 'path';
+import { homedir } from 'os';
 import { simpleGit } from 'simple-git';
 import { select, checkbox, confirm, input } from '@inquirer/prompts';
 import type { Config } from '../../lib/config.js';
@@ -111,7 +112,8 @@ async function findWorktreeNameByPath(
     const result = await git.raw(['worktree', 'list', '--porcelain']);
 
     const blocks = result.trim().split('\n\n');
-    const worktreesDir = path.join(mainRepoPath, '.worktrees');
+    // Global worktrees directory: ~/.workon/worktrees/
+    const globalWorktreesDir = path.join(homedir(), '.workon', 'worktrees');
 
     for (const block of blocks) {
       if (!block.trim()) continue;
@@ -133,8 +135,8 @@ async function findWorktreeNameByPath(
       // Check if this is the worktree we're looking for
       if (wtPath === worktreePath) {
         // Use the same naming logic as WorktreeManager.parseWorktreeList
-        if (wtPath.startsWith(worktreesDir)) {
-          // Managed worktree under .worktrees/
+        if (wtPath.startsWith(globalWorktreesDir)) {
+          // Managed worktree under ~/.workon/worktrees/{project}/
           return path.basename(wtPath);
         } else {
           // External worktree - use branch name converted to dir format, or basename

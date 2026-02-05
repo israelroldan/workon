@@ -829,7 +829,7 @@ async function manageWorktrees(projectName: string, ctx: InteractiveContext): Pr
     projectPath = configPath.absolutify().path;
   }
 
-  const manager = new WorktreeManager(projectPath);
+  const manager = new WorktreeManager(projectPath, projectName);
 
   if (!(await manager.isGitRepository())) {
     log.error(`'${projectName}' is not a git repository`);
@@ -1201,7 +1201,7 @@ export async function manageWorktreesInteractive(
   const { projectPath, projectName } = projectCtx;
   const displayName = projectName || path.basename(projectPath);
 
-  const manager = new WorktreeManager(projectPath);
+  const manager = new WorktreeManager(projectPath, projectName ?? undefined);
 
   if (!(await manager.isGitRepository())) {
     log.error(`'${displayName}' is not a git repository`);
