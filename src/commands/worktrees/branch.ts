@@ -44,7 +44,7 @@ export function createBranchCommand(ctx: WorktreesContext): Command {
 
       const { projectPath, projectName } = projectCtx;
       const displayName = projectName || path.basename(projectPath);
-      const manager = new WorktreeManager(projectPath);
+      const manager = new WorktreeManager(projectPath, projectName ?? undefined);
 
       const worktree = await manager.get(worktreeName);
       if (!worktree) {

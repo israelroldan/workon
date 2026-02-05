@@ -47,7 +47,7 @@ export function createMergeCommand(ctx: WorktreesContext): Command {
 
       const { projectPath, projectName } = projectCtx;
       const displayName = projectName || path.basename(projectPath);
-      const manager = new WorktreeManager(projectPath);
+      const manager = new WorktreeManager(projectPath, projectName ?? undefined);
 
       const worktree = await manager.get(name);
       if (!worktree) {

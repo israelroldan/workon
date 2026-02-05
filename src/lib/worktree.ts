@@ -2,6 +2,8 @@ import { exec as execCallback } from 'child_process';
 import { promisify } from 'util';
 import { existsSync, chmodSync } from 'fs';
 import { join, basename } from 'path';
+import { createHash } from 'crypto';
+import { homedir } from 'os';
 import { simpleGit, SimpleGit } from 'simple-git';
 
 const exec = promisify(execCallback);
@@ -25,16 +27,45 @@ export interface MergeOptions {
   squash?: boolean;
 }
 
-const WORKTREES_DIR = '.worktrees';
+const WORKON_DIR = '.workon';
+const WORKTREES_SUBDIR = 'worktrees';
 const HOOK_DIR = '.workon';
 const SETUP_HOOK = 'worktree-setup.sh';
 
+/**
+ * Generate a short hash from a path for disambiguation
+ */
+function shortHash(input: string): string {
+  return createHash('sha256').update(input).digest('hex').substring(0, 8);
+}
+
+/**
+ * Derive a unique project identifier from the project path
+ * Uses basename + short hash of full path for uniqueness
+ */
+export function deriveProjectIdentifier(projectPath: string): string {
+  const name = basename(projectPath);
+  const hash = shortHash(projectPath);
+  return `${name}-${hash}`;
+}
+
+/**
+ * Get the worktrees directory for a project
+ */
+export function getWorktreesDirForProject(projectIdentifier: string): string {
+  return join(homedir(), WORKON_DIR, WORKTREES_SUBDIR, projectIdentifier);
+}
+
 export class WorktreeManager {
   private projectPath: string;
+  private projectIdentifier: string;
   private git: SimpleGit;
 
-  constructor(projectPath: string) {
+  constructor(projectPath: string, _projectName?: string) {
     this.projectPath = projectPath;
+    // Always use derived identifier for consistency between creation and detection
+    // The project name parameter is kept for potential future use (e.g., display)
+    this.projectIdentifier = deriveProjectIdentifier(projectPath);
     this.git = simpleGit(projectPath);
   }
 
@@ -52,9 +83,10 @@ export class WorktreeManager {
 
   /**
    * Get the worktrees directory path
+   * Stored at ~/.workon/worktrees/{project-identifier}/
    */
   getWorktreesDir(): string {
-    return join(this.projectPath, WORKTREES_DIR);
+    return join(homedir(), WORKON_DIR, WORKTREES_SUBDIR, this.projectIdentifier);
   }
 
   /**
@@ -335,7 +367,7 @@ export class WorktreeManager {
         const worktreesDir = this.getWorktreesDir();
         let name: string;
         if (path.startsWith(worktreesDir)) {
-          // Managed worktree under .worktrees/
+          // Managed worktree under ~/.workon/worktrees/{project}/
           name = basename(path);
         } else if (path === this.projectPath) {
           // Main worktree

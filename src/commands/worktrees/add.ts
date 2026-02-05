@@ -54,7 +54,7 @@ export function createAddCommand(ctx: WorktreesContext): Command {
       }
 
       const { projectPath, projectName } = projectCtx;
-      const manager = new WorktreeManager(projectPath);
+      const manager = new WorktreeManager(projectPath, projectName ?? undefined);
 
       // If no base branch specified and branch doesn't exist, ask user
       const branchExists = await manager.branchExists(branch);

@@ -33,7 +33,7 @@ export function createListCommand(ctx: WorktreesContext): Command {
 
       const { projectPath, projectName } = projectCtx;
       const displayName = projectName || path.basename(projectPath);
-      const manager = new WorktreeManager(projectPath);
+      const manager = new WorktreeManager(projectPath, projectName ?? undefined);
 
       const allWorktrees = await manager.list();
       const managedWorktrees = await manager.listManagedWorktrees();
