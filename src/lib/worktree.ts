@@ -43,10 +43,17 @@ function shortHash(input: string): string {
  * Derive a unique project identifier from the project path
  * Uses basename + short hash of full path for uniqueness
  */
-function deriveProjectIdentifier(projectPath: string): string {
+export function deriveProjectIdentifier(projectPath: string): string {
   const name = basename(projectPath);
   const hash = shortHash(projectPath);
   return `${name}-${hash}`;
+}
+
+/**
+ * Get the worktrees directory for a project
+ */
+export function getWorktreesDirForProject(projectIdentifier: string): string {
+  return join(homedir(), WORKON_DIR, WORKTREES_SUBDIR, projectIdentifier);
 }
 
 export class WorktreeManager {
@@ -54,9 +61,11 @@ export class WorktreeManager {
   private projectIdentifier: string;
   private git: SimpleGit;
 
-  constructor(projectPath: string, projectIdentifier?: string) {
+  constructor(projectPath: string, _projectName?: string) {
     this.projectPath = projectPath;
-    this.projectIdentifier = projectIdentifier || deriveProjectIdentifier(projectPath);
+    // Always use derived identifier for consistency between creation and detection
+    // The project name parameter is kept for potential future use (e.g., display)
+    this.projectIdentifier = deriveProjectIdentifier(projectPath);
     this.git = simpleGit(projectPath);
   }
 
