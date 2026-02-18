@@ -104,6 +104,49 @@ describe('EnvironmentRecognizer', () => {
     });
   });
 
+  describe('getAllProjects', () => {
+    it('should resolve absolute project paths without joining with base', async () => {
+      mockConfig.set('project_defaults', { base: '/code' });
+      mockConfig.setProject('external', { path: '/opt/external/project', events: { cwd: true } });
+
+      EnvironmentRecognizer.configure(mockConfig, mockLogger);
+
+      // @ts-expect-error - accessing private static method
+      const projects = EnvironmentRecognizer.getAllProjects(true);
+      const external = projects.find((p: { name: string }) => p.name === 'external');
+      expect(external).toBeDefined();
+      // Before fix: would produce /code/opt/external/project
+      expect(external!.path.path).toBe('/opt/external/project');
+    });
+
+    it('should join relative project paths with base', async () => {
+      mockConfig.set('project_defaults', { base: '/code' });
+      mockConfig.setProject('relative', { path: 'myapp', events: { cwd: true } });
+
+      EnvironmentRecognizer.configure(mockConfig, mockLogger);
+
+      // @ts-expect-error - accessing private static method
+      const projects = EnvironmentRecognizer.getAllProjects(true);
+      const relative = projects.find((p: { name: string }) => p.name === 'relative');
+      expect(relative).toBeDefined();
+      expect(relative!.path.path).toContain('code/myapp');
+    });
+
+    it('should return projects with absolute paths even when no base is configured', async () => {
+      // No base set
+      mockConfig.setProject('absproject', { path: '/opt/myproject', events: { cwd: true } });
+
+      EnvironmentRecognizer.configure(mockConfig, mockLogger);
+
+      // @ts-expect-error - accessing private static method
+      const projects = EnvironmentRecognizer.getAllProjects(true);
+      const absProject = projects.find((p: { name: string }) => p.name === 'absproject');
+      // Before fix: getAllProjects returned [] when no base was set
+      expect(absProject).toBeDefined();
+      expect(absProject!.path.path).toBe('/opt/myproject');
+    });
+  });
+
   describe('recognize', () => {
     it('should return BaseEnvironment when no projects configured', async () => {
       EnvironmentRecognizer.configure(mockConfig, mockLogger);
@@ -133,6 +176,52 @@ describe('EnvironmentRecognizer', () => {
       // Use an existing directory
       const result = await EnvironmentRecognizer.recognize('/tmp');
       expect(result).toBeInstanceOf(BaseEnvironment);
+    });
+  });
+
+  describe('getAllProjects path resolution', () => {
+    it('should not mangle absolute project paths when base is set', () => {
+      // Regression: baseDir.join(absolutePath) produced /base/absolute/path
+      mockConfig.set('project_defaults', { base: '/code' });
+      mockConfig.setProject('external', { path: '/opt/external', events: { cwd: true } });
+
+      EnvironmentRecognizer.configure(mockConfig, mockLogger);
+
+      // @ts-expect-error - accessing private static
+      const projects = EnvironmentRecognizer.getAllProjects(true);
+      const external = projects.find((p: { name: string }) => p.name === 'external');
+
+      expect(external).toBeDefined();
+      expect(external!.path.path).toBe('/opt/external');
+      expect(external!.path.path).not.toContain('/code/opt');
+    });
+
+    it('should join relative paths with base', () => {
+      mockConfig.set('project_defaults', { base: '/code' });
+      mockConfig.setProject('myapp', { path: 'org/myapp', events: { cwd: true } });
+
+      EnvironmentRecognizer.configure(mockConfig, mockLogger);
+
+      // @ts-expect-error - accessing private static
+      const projects = EnvironmentRecognizer.getAllProjects(true);
+      const myapp = projects.find((p: { name: string }) => p.name === 'myapp');
+
+      expect(myapp).toBeDefined();
+      expect(myapp!.path.path).toBe('/code/org/myapp');
+    });
+
+    it('should resolve projects with absolute paths when no base is set', () => {
+      // Regression: getAllProjects returned empty when base was unset
+      mockConfig.setProject('standalone', { path: '/opt/standalone', events: { cwd: true } });
+
+      EnvironmentRecognizer.configure(mockConfig, mockLogger);
+
+      // @ts-expect-error - accessing private static
+      const projects = EnvironmentRecognizer.getAllProjects(true);
+      const standalone = projects.find((p: { name: string }) => p.name === 'standalone');
+
+      expect(standalone).toBeDefined();
+      expect(standalone!.path.path).toBe('/opt/standalone');
     });
   });
 });
