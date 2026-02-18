@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.5.1](https://github.com/israelroldan/workon/compare/v3.5.0...v3.5.1) (2026-02-18)
+
+
+### Bug Fixes
+
+* resolve project path handling bugs in add and relativize logic ([#33](https://github.com/israelroldan/workon/issues/33)) ([937eee6](https://github.com/israelroldan/workon/commit/937eee6bb4b7f53bb1f9380db72b64502dc09454))
+
 ## [3.5.0](https://github.com/israelroldan/workon/compare/v3.4.0...v3.5.0) (2026-02-05)
 
 
