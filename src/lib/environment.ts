@@ -91,19 +91,20 @@ export class EnvironmentRecognizer {
     }
 
     const defaults = this.config.getDefaults();
-    if (!defaults?.base) {
-      this.projects = [];
-      return this.projects;
-    }
-
-    const baseDir = File.from(defaults.base);
+    const baseDir = defaults?.base ? File.from(defaults.base).absolutify() : null;
     const projectsMap = this.config.getProjects();
 
-    this.projects = Object.entries(projectsMap).map(([name, project]) => ({
-      ...project,
-      name,
-      path: baseDir.join(project.path),
-    }));
+    this.projects = Object.entries(projectsMap).map(([name, project]) => {
+      const projectPath = File.from(project.path);
+      const resolvedPath =
+        baseDir && !projectPath.isAbsolute() ? baseDir.join(project.path) : projectPath;
+
+      return {
+        ...project,
+        name,
+        path: resolvedPath,
+      };
+    });
 
     return this.projects;
   }

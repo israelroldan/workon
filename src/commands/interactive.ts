@@ -181,7 +181,7 @@ async function initProject(
 
     // Convert to relative path
     let answerFile = File.from(pathAnswer);
-    const defaultBase = defaults?.base ? File.from(defaults.base) : File.cwd();
+    const defaultBase = defaults?.base ? File.from(defaults.base).absolutify() : File.cwd();
 
     if (!answerFile.isAbsolute()) {
       answerFile = defaultBase.join(answerFile.path);
@@ -198,7 +198,8 @@ async function initProject(
       answerFile = answerFile.absolutify();
     }
 
-    basePath = answerFile.relativize(defaultBase.path as unknown as string).path;
+    const relPath = answerFile.relativize(defaultBase.path);
+    basePath = relPath && !relPath.path.startsWith('..') ? relPath.path : answerFile.path;
   }
 
   // IDE selection
@@ -450,7 +451,7 @@ async function createProjectManage(ctx: InteractiveContext): Promise<void> {
     },
   });
 
-  const defaultPath = defaults?.base ? File.from(defaults.base).join(name).path : name;
+  const defaultPath = defaults?.base ? File.from(defaults.base).absolutify().join(name).path : name;
   const pathInput = await input({
     message: 'Project path:',
     default: defaultPath,
@@ -458,11 +459,14 @@ async function createProjectManage(ctx: InteractiveContext): Promise<void> {
 
   let relativePath = pathInput;
   if (defaults?.base) {
-    const baseDir = File.from(defaults.base);
+    const baseDir = File.from(defaults.base).absolutify();
     const pathFile = File.from(pathInput);
     try {
       if (pathFile.isAbsolute()) {
-        relativePath = pathFile.relativize(baseDir.path).path;
+        const relPath = pathFile.relativize(baseDir.path);
+        if (relPath && !relPath.path.startsWith('..')) {
+          relativePath = relPath.path;
+        }
       }
     } catch {
       relativePath = pathInput;
@@ -537,11 +541,14 @@ async function editProjectManage(ctx: InteractiveContext): Promise<void> {
 
   let relativePath = pathInput;
   if (defaults?.base) {
-    const baseDir = File.from(defaults.base);
+    const baseDir = File.from(defaults.base).absolutify();
     const pathFile = File.from(pathInput);
     try {
       if (pathFile.isAbsolute()) {
-        relativePath = pathFile.relativize(baseDir.path).path;
+        const relPath = pathFile.relativize(baseDir.path);
+        if (relPath && !relPath.path.startsWith('..')) {
+          relativePath = relPath.path;
+        }
       }
     } catch {
       relativePath = pathInput;

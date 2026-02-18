@@ -108,10 +108,13 @@ async function createProject(ctx: ManageContext): Promise<void> {
   // Convert to relative path if possible
   let relativePath = pathInput;
   if (defaults?.base) {
-    const baseDir = File.from(defaults.base);
+    const baseDir = File.from(defaults.base).absolutify();
     const pathFile = File.from(pathInput);
     try {
-      relativePath = pathFile.relativize(baseDir.path).path;
+      const relPath = pathFile.relativize(baseDir.path);
+      if (relPath && !relPath.path.startsWith('..')) {
+        relativePath = relPath.path;
+      }
     } catch {
       relativePath = pathInput;
     }
@@ -205,11 +208,14 @@ async function editProject(ctx: ManageContext): Promise<void> {
 
   let relativePath = pathInput;
   if (defaults?.base) {
-    const baseDir = File.from(defaults.base);
+    const baseDir = File.from(defaults.base).absolutify();
     const pathFile = File.from(pathInput);
     try {
       if (pathFile.isAbsolute()) {
-        relativePath = pathFile.relativize(baseDir.path).path;
+        const relPath = pathFile.relativize(baseDir.path);
+        if (relPath && !relPath.path.startsWith('..')) {
+          relativePath = relPath.path;
+        }
       }
     } catch {
       relativePath = pathInput;

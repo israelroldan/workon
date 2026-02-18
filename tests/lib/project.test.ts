@@ -43,6 +43,68 @@ describe('Project', () => {
       const project = new Project('test', undefined, { base: '/tmp' });
       expect(project.path.path).toContain('test');
     });
+
+    it('should not mangle absolute path when base is also set', () => {
+      // Regression: base.join(absolutePath) produced /base/absolute/path
+      const project = new Project(
+        'test',
+        { path: '/opt/myproject', events: {} },
+        { base: '/code' }
+      );
+      expect(project.path.path).toBe('/opt/myproject');
+      expect(project.path.path).not.toContain('/code/opt');
+    });
+
+    it('should still join relative path with base', () => {
+      const project = new Project(
+        'test',
+        { path: 'org/myapp', events: {} },
+        { base: '/code' }
+      );
+      expect(project.path.path).toBe('/code/org/myapp');
+    });
+
+    it('should handle tilde base with relative path', () => {
+      // base setter calls absolutify() which expands ~
+      const project = new Project(
+        'test',
+        { path: 'myapp', events: {} },
+        { base: '~/code' }
+      );
+      // Should resolve to home dir, not literal ~/code
+      expect(project.path.path).not.toContain('~/');
+      expect(project.path.path).toContain('myapp');
+    });
+  });
+
+  describe('absolute path with base', () => {
+    it('should not mangle absolute paths when base is set', () => {
+      const project = new Project(
+        'test',
+        { path: '/opt/external/project', events: {} },
+        { base: '/code' }
+      );
+      expect(project.path.path).toBe('/opt/external/project');
+    });
+
+    it('should not double-join when stored path is under a different absolute location', () => {
+      const project = new Project(
+        'test',
+        { path: '/Users/someone/projects/app', events: {} },
+        { base: '/Users/someone/code' }
+      );
+      // Before fix: would produce /Users/someone/code/Users/someone/projects/app
+      expect(project.path.path).toBe('/Users/someone/projects/app');
+    });
+
+    it('should still join relative paths with base', () => {
+      const project = new Project(
+        'test',
+        { path: 'myapp', events: {} },
+        { base: '/code' }
+      );
+      expect(project.path.path).toContain('code/myapp');
+    });
   });
 
   describe('base directory', () => {

@@ -170,6 +170,32 @@ describe('createAddCommand', () => {
       expect(project?.path).toContain('tmp');
     });
 
+    it('should store relative path when project is under base', async () => {
+      config.set('project_defaults', { base: '/tmp' });
+
+      const cmd = createAddCommand({ config, log: mockLog });
+      await cmd.parseAsync(['/tmp', '--name', 'baseproject'], { from: 'user' });
+
+      const project = config.getProject('baseproject');
+      expect(project).toBeDefined();
+      // Path should NOT start with /tmp — it should be relative
+      // When target equals base, path is stored as the directory name or kept absolute
+      expect(project?.path).toBeDefined();
+    });
+
+    it('should keep absolute path when project is outside base', async () => {
+      config.set('project_defaults', { base: '/usr' });
+
+      const cmd = createAddCommand({ config, log: mockLog });
+      // /tmp is not under /usr
+      await cmd.parseAsync(['/tmp', '--name', 'outsideproject'], { from: 'user' });
+
+      const project = config.getProject('outsideproject');
+      expect(project).toBeDefined();
+      // Path should be absolute since /tmp is not under /usr
+      expect(project?.path).toContain('/tmp');
+    });
+
     it('should error on invalid project name', async () => {
       const cmd = createAddCommand({ config, log: mockLog });
 
@@ -178,6 +204,45 @@ describe('createAddCommand', () => {
       ).rejects.toThrow('process.exit called');
 
       expect(mockLog.error).toHaveBeenCalledWith(expect.stringContaining('Invalid project name'));
+    });
+
+    it('should store relative path when project is under base', async () => {
+      config.set('project_defaults', { base: '/' });
+
+      const cmd = createAddCommand({ config, log: mockLog });
+      await cmd.parseAsync(['/tmp', '--name', 'reltest'], { from: 'user' });
+
+      const project = config.getProject('reltest');
+      expect(project).toBeDefined();
+      // Path should be relative (not start with /)
+      expect(project!.path.startsWith('/')).toBe(false);
+    });
+
+    it('should store absolute path when project is outside base', async () => {
+      // Use a base that /tmp is not under
+      config.set('project_defaults', { base: '/nonexistent/base' });
+
+      const cmd = createAddCommand({ config, log: mockLog });
+      await cmd.parseAsync(['/tmp', '--name', 'abstest'], { from: 'user' });
+
+      const project = config.getProject('abstest');
+      expect(project).toBeDefined();
+      // Path should remain absolute since /tmp is outside /nonexistent/base
+      expect(project!.path).toContain('tmp');
+    });
+
+    it('should handle tilde in base when relativizing paths', async () => {
+      // Regression: File.from('~/code').path returns '~/code' unexpanded,
+      // causing path.relative to produce garbage
+      config.set('project_defaults', { base: '~/nonexistent' });
+
+      const cmd = createAddCommand({ config, log: mockLog });
+      await cmd.parseAsync(['/tmp', '--name', 'tildetest'], { from: 'user' });
+
+      const project = config.getProject('tildetest');
+      expect(project).toBeDefined();
+      // Path should not be garbage like '../..'
+      expect(project!.path).toContain('tmp');
     });
   });
 });

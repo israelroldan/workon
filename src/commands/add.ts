@@ -111,7 +111,7 @@ async function addProject(pathArg: string, options: AddOptions, ctx: AddContext)
   // Calculate relative path if possible
   let relativePath = targetPath;
   if (defaults?.base) {
-    const baseDir = File.from(defaults.base);
+    const baseDir = File.from(defaults.base).absolutify();
     try {
       const relPath = pathFile.relativize(baseDir.path);
       if (relPath && !relPath.path.startsWith('..')) {
