@@ -69,10 +69,11 @@ export class Project {
   }
 
   set path(path: string) {
-    if (this._base) {
+    const pathFile = File.from(path);
+    if (this._base && !pathFile.isAbsolute()) {
       this._path = this._base.join(path);
     } else {
-      this._path = File.from(path);
+      this._path = pathFile;
     }
     this._path = this._path.absolutify();
   }
