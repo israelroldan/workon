@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.5.2](https://github.com/israelroldan/workon/compare/v3.5.1...v3.5.2) (2026-02-24)
+
+
+### Bug Fixes
+
+* handle missing worktree directories gracefully ([#36](https://github.com/israelroldan/workon/issues/36)) ([f3a8495](https://github.com/israelroldan/workon/commit/f3a84952fbc48b554c6f4e33e1d8761bfe22101e)), closes [#35](https://github.com/israelroldan/workon/issues/35)
+
 ## [3.5.1](https://github.com/israelroldan/workon/compare/v3.5.0...v3.5.1) (2026-02-18)
 
 
