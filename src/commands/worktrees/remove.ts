@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import path from 'path';
+import { existsSync } from 'fs';
 import { confirm } from '@inquirer/prompts';
 import type { Config } from '../../lib/config.js';
 import type { Logger } from '../../types/index.js';
@@ -61,25 +62,35 @@ export function createRemoveCommand(ctx: WorktreesContext): Command {
         process.exit(1);
       }
 
-      // Check for uncommitted changes
-      const hasChanges = await manager.hasUncommittedChanges(name);
-      if (hasChanges && !options.force) {
-        log.warn(`Worktree '${name}' has uncommitted changes.`);
+      // Check if worktree directory exists on disk
+      const pathMissing = !existsSync(worktree.path);
+      if (pathMissing) {
+        log.warn(`Worktree directory is missing from disk: ${worktree.path}`);
+        // Force removal since git requires --force for missing directories
+        options.force = true;
+      }
 
-        if (!options.yes) {
-          const shouldForce = await confirm({
-            message: 'Do you want to force removal and lose these changes?',
-            default: false,
-          });
+      // Check for uncommitted changes (skip if directory is missing)
+      if (!pathMissing) {
+        const hasChanges = await manager.hasUncommittedChanges(name);
+        if (hasChanges && !options.force) {
+          log.warn(`Worktree '${name}' has uncommitted changes.`);
 
-          if (!shouldForce) {
-            log.info('Removal cancelled.');
-            return;
+          if (!options.yes) {
+            const shouldForce = await confirm({
+              message: 'Do you want to force removal and lose these changes?',
+              default: false,
+            });
+
+            if (!shouldForce) {
+              log.info('Removal cancelled.');
+              return;
+            }
+            options.force = true;
+          } else {
+            log.error('Use --force to remove worktrees with uncommitted changes.');
+            process.exit(1);
           }
-          options.force = true;
-        } else {
-          log.error('Use --force to remove worktrees with uncommitted changes.');
-          process.exit(1);
         }
       }
 
