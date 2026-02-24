@@ -186,13 +186,16 @@ export class WorktreeManager {
       throw new Error('Cannot remove the main worktree');
     }
 
-    // Check for uncommitted changes
-    if (!force && (await this.hasUncommittedChanges(name))) {
+    // If the directory is missing, force is required for git worktree remove
+    const pathMissing = !existsSync(worktree.path);
+
+    // Check for uncommitted changes (skipped if directory is missing)
+    if (!pathMissing && !force && (await this.hasUncommittedChanges(name))) {
       throw new Error(`Worktree '${name}' has uncommitted changes. Use --force to remove anyway.`);
     }
 
     const args = ['worktree', 'remove'];
-    if (force) {
+    if (force || pathMissing) {
       args.push('--force');
     }
     args.push(worktree.path);
@@ -216,6 +219,11 @@ export class WorktreeManager {
 
     if (!worktree) {
       throw new Error(`Worktree '${nameOrPath}' not found`);
+    }
+
+    // If the directory doesn't exist on disk, there are no changes to lose
+    if (!existsSync(worktree.path)) {
+      return false;
     }
 
     const worktreeGit = simpleGit(worktree.path);

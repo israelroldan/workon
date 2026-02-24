@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import path from 'path';
+import { existsSync } from 'fs';
 import type { Config } from '../../lib/config.js';
 import type { Logger } from '../../types/index.js';
 import { WorktreeManager } from '../../lib/worktree.js';
@@ -57,11 +58,13 @@ export function createListCommand(ctx: WorktreesContext): Command {
       for (const wt of worktrees) {
         const isManaged = managedPaths.has(wt.path);
         const mainLabel = wt.isMain ? chalk.gray(' (main)') : '';
-        const externalLabel = !wt.isMain && !isManaged ? chalk.yellow(' (external)') : '';
+        const missingLabel = !wt.isMain && !existsSync(wt.path) ? chalk.red(' (missing)') : '';
+        const externalLabel =
+          !wt.isMain && !isManaged && !missingLabel ? chalk.yellow(' (external)') : '';
         const branchDisplay =
           wt.branch === '(detached)' ? chalk.yellow(wt.branch) : chalk.green(wt.branch);
 
-        console.log(`  ${chalk.cyan(wt.name)}${mainLabel}${externalLabel}`);
+        console.log(`  ${chalk.cyan(wt.name)}${mainLabel}${missingLabel}${externalLabel}`);
         console.log(`    Branch: ${branchDisplay}`);
         console.log(`    Path:   ${chalk.gray(wt.path)}`);
         console.log(`    HEAD:   ${chalk.gray(wt.head.substring(0, 8))}`);
