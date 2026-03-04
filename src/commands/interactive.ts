@@ -1,4 +1,5 @@
 import { select, input, checkbox, confirm } from '@inquirer/prompts';
+import { existsSync } from 'fs';
 import File from 'phylo';
 import path from 'path';
 import deepAssign from 'deep-assign';
@@ -1070,6 +1071,20 @@ async function removeWorktreeManage(
 
   if (confirmed) {
     try {
+      // Run pre-teardown hook if it exists
+      if (manager.hasTeardownHook()) {
+        const worktree = await manager.get(worktreeName);
+        if (worktree && existsSync(worktree.path)) {
+          log.info('Running pre-teardown hook...');
+          try {
+            await manager.runPreTeardownHook(worktree.path);
+            log.info('Pre-teardown hook completed.');
+          } catch (error) {
+            log.warn(`Pre-teardown hook failed: ${(error as Error).message}`);
+          }
+        }
+      }
+
       await manager.remove(worktreeName, true);
       log.info(`Worktree '${worktreeName}' removed.`);
     } catch (error) {
@@ -1135,6 +1150,17 @@ async function mergeWorktreeManage(
     log.info(`Merged '${worktree.branch}' into '${targetBranch}'`);
 
     if (removeAfter) {
+      // Run pre-teardown hook if it exists
+      if (manager.hasTeardownHook() && existsSync(worktree.path)) {
+        log.info('Running pre-teardown hook...');
+        try {
+          await manager.runPreTeardownHook(worktree.path);
+          log.info('Pre-teardown hook completed.');
+        } catch (error) {
+          log.warn(`Pre-teardown hook failed: ${(error as Error).message}`);
+        }
+      }
+
       await manager.remove(worktreeName, true);
       log.info(`Worktree '${worktreeName}' removed.`);
     }

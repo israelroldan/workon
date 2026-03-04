@@ -19,6 +19,7 @@ interface WorktreesContext {
 interface RemoveOptions {
   force?: boolean;
   yes?: boolean;
+  hook?: boolean; // Commander negated options: --no-hook sets hook=false
 }
 
 export function createRemoveCommand(ctx: WorktreesContext): Command {
@@ -29,6 +30,7 @@ export function createRemoveCommand(ctx: WorktreesContext): Command {
     .argument('<name>', 'Worktree name')
     .option('-f, --force', 'Force removal even with uncommitted changes')
     .option('-y, --yes', 'Skip confirmation prompt')
+    .option('--no-hook', 'Skip running the pre-teardown hook')
     .action(async (name: string, options: RemoveOptions) => {
       const projectCtx = await resolveProjectFromCwd(config, log);
 
@@ -119,6 +121,23 @@ export function createRemoveCommand(ctx: WorktreesContext): Command {
       if (await tmux.sessionExists(sessionName)) {
         log.debug(`Killing tmux session: ${sessionName}`);
         await tmux.killSession(sessionName);
+      }
+
+      // Run pre-teardown hook if it exists and not disabled
+      if (options.hook !== false && !pathMissing && manager.hasTeardownHook()) {
+        const hookSpinner = ora('Running pre-teardown hook...').start();
+        try {
+          const { stdout, stderr } = await manager.runPreTeardownHook(worktree.path);
+          hookSpinner.succeed('Pre-teardown hook completed');
+          if (stdout.trim()) {
+            console.log(chalk.gray(stdout.trim()));
+          }
+          if (stderr.trim()) {
+            console.log(chalk.yellow(stderr.trim()));
+          }
+        } catch (error) {
+          hookSpinner.warn(`Pre-teardown hook failed: ${(error as Error).message}`);
+        }
       }
 
       const spinner = ora(`Removing worktree '${name}'...`).start();
