@@ -31,6 +31,7 @@ const WORKON_DIR = '.workon';
 const WORKTREES_SUBDIR = 'worktrees';
 const HOOK_DIR = '.workon';
 const SETUP_HOOK = 'worktree-setup.sh';
+const TEARDOWN_HOOK = 'worktree-teardown.sh';
 
 /**
  * Generate a short hash from a path for disambiguation
@@ -316,6 +317,52 @@ export class WorktreeManager {
 
     if (!existsSync(hookPath)) {
       throw new Error('Setup hook not found');
+    }
+
+    // Ensure hook is executable
+    try {
+      chmodSync(hookPath, '755');
+    } catch {
+      // Ignore chmod errors on systems that don't support it
+    }
+
+    const env = {
+      ...process.env,
+      WORKTREE_PATH: worktreePath,
+      PROJECT_PATH: this.projectPath,
+    };
+
+    const { stdout, stderr } = await exec(hookPath, {
+      cwd: worktreePath,
+      env,
+    });
+
+    return { stdout, stderr };
+  }
+
+  /**
+   * Check if a pre-teardown hook exists
+   */
+  hasTeardownHook(): boolean {
+    const hookPath = this.getTeardownHookPath();
+    return existsSync(hookPath);
+  }
+
+  /**
+   * Get the path to the teardown hook
+   */
+  getTeardownHookPath(): string {
+    return join(this.projectPath, HOOK_DIR, TEARDOWN_HOOK);
+  }
+
+  /**
+   * Run the pre-teardown hook for a worktree
+   */
+  async runPreTeardownHook(worktreePath: string): Promise<{ stdout: string; stderr: string }> {
+    const hookPath = this.getTeardownHookPath();
+
+    if (!existsSync(hookPath)) {
+      throw new Error('Teardown hook not found');
     }
 
     // Ensure hook is executable
