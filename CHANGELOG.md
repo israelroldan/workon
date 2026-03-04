@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.6.0](https://github.com/israelroldan/workon/compare/v3.5.2...v3.6.0) (2026-03-04)
+
+
+### Features
+
+* add worktree-teardown.sh hook support for cleanup on removal ([#38](https://github.com/israelroldan/workon/issues/38)) ([1b1b7f3](https://github.com/israelroldan/workon/commit/1b1b7f306202b99a86fa79875adb5b5b0675367c))
+
 ## [3.5.2](https://github.com/israelroldan/workon/compare/v3.5.1...v3.5.2) (2026-02-24)
 
 
