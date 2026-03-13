@@ -29,7 +29,7 @@ interface TerminalMultiplexer {
   sessionExists(name: string): Promise<boolean>
   getSessionName(projectName: string): string
   getWorktreeSessionName(projectName: string, worktreeName: string): string
-  killSession(name: string): Promise<void>
+  killSession(name: string): Promise<boolean>
   listWorkonSessions(): Promise<string[]>
 
   // Layout creation
@@ -103,7 +103,7 @@ Located in `src/lib/cmux.ts`. Conceptual mapping from tmux to cmux:
 | kill-session | close-workspace |
 | list-sessions | list-workspaces |
 
-**Availability:** Check for `cmux` binary + `cmux ping` to confirm the app is running and socket is reachable.
+**Availability:** Check for `cmux` binary + `cmux ping` to confirm the app is running and socket is reachable. `isAvailable()` is exposed on the interface for runtime rechecking (e.g., if cmux crashes mid-session), but the primary consumer is `detectMultiplexer()`. Callers that receive a `TerminalMultiplexer` from the factory can generally assume availability — the null-check on the factory result is the main guard.
 
 **Session/Workspace management:**
 
@@ -114,9 +114,13 @@ Located in `src/lib/cmux.ts`. Conceptual mapping from tmux to cmux:
 
 **Layout creation:**
 
-- `createSplitSession()` — `cmux new-workspace` then `cmux new-split right` then `cmux send-surface {left} "claude ..."` + `cmux send-key-surface {left} enter`
-- `createThreePaneSession()` — `cmux new-workspace` then `cmux new-split right` then `cmux new-split down` (on right pane) then send claude to left, npm to bottom-right
-- `createTwoPaneNpmSession()` — `cmux new-workspace` then `cmux new-split right` then send npm to right pane
+- `createSplitSession()` — `cmux new-workspace` then `cmux new-split right` then send claude to left surface, send-key enter
+- `createThreePaneSession()` — `cmux new-workspace` then `cmux new-split right` then `cmux new-split down` (on right surface) then send claude to left, npm to bottom-right
+- `createTwoPaneNpmSession()` — `cmux new-workspace` then `cmux new-split right` then send npm to right surface
+
+**Surface ID tracking:** After `cmux new-workspace`, call `cmux identify --json` to get the initial surface ID. After each `cmux new-split`, the newly created surface is auto-focused — call `cmux identify --json` again to capture its ID. Store surface IDs in local variables to target commands with `cmux send-surface {id}` and `cmux send-key-surface {id}`. If a split fails, clean up by closing the workspace.
+
+**Shell wrappers:** cmux panes do not exhibit the "Pane is dead" problem tmux has, so `exec $SHELL` / `wrapWithShellFallback()` wrappers are not needed in `CmuxManager`.
 
 **Attachment:**
 
@@ -131,6 +135,8 @@ Located in `src/lib/cmux.ts`. Conceptual mapping from tmux to cmux:
 - Replace all `tmux.xxx()` calls with `mux.xxx()` — mechanical rename
 - `isTmuxAvailable()` checks become `mux !== null`
 - Handler function parameter types change from `TmuxManager` to `TerminalMultiplexer`
+- Rename internal functions: `handleTmuxLayout` → `handleMultiplexerLayout`, etc.
+- Update fallback message ("tmux not available") to be multiplexer-aware (e.g., "No terminal multiplexer available — install tmux or use cmux")
 
 What stays the same:
 
@@ -142,6 +148,22 @@ What stays the same:
 
 iTerm2 detection (`tmux -CC` mode) stays inside `TmuxManager.attachToSession()` — `CmuxManager` doesn't need it.
 
+### Changes to Worktree Commands
+
+The worktree subsystem also uses `TmuxManager` directly and must adopt the multiplexer abstraction.
+
+**`src/commands/worktrees/open.ts`** — the most significant change. This file:
+- Creates `new TmuxManager()` and calls its methods for session management
+- Hardcodes raw `tmux` CLI commands in its layout builders (lines ~235-401)
+
+Refactor: replace `new TmuxManager()` with `detectMultiplexer()`, and refactor the hardcoded tmux command strings into the `TerminalMultiplexer` interface methods. The worktree layout builders should delegate to the multiplexer's `buildShellCommands()` / `createSplitSession()` methods rather than emitting raw tmux commands.
+
+**`src/commands/worktrees/merge.ts`** — uses `TmuxManager` for `killSession()` on merge. Replace with `detectMultiplexer()`.
+
+**`src/commands/worktrees/remove.ts`** — uses `TmuxManager` for `killSession()` on removal. Replace with `detectMultiplexer()`.
+
+**`src/commands/worktree.ts`** — uses `TmuxManager` for `killSession()`. Replace with `detectMultiplexer()`.
+
 ### Event System Renames
 
 Minimal renames for accuracy:
@@ -149,6 +171,7 @@ Minimal renames for accuracy:
 - `EventTmux` → `EventMultiplexer`
 - `requiresTmux` → `requiresMultiplexer`
 - `getTmuxEnabledEvents()` → `getMultiplexerEnabledEvents()`
+- `static get tmux()` → `static get multiplexer()` (in base.ts and all event subclasses)
 
 No changes to event behavior. Layout hints (`'split'`, `'three-pane'`) are already multiplexer-agnostic.
 
@@ -161,24 +184,46 @@ No changes to event behavior. Layout hints (`'split'`, `'three-pane'`) are alrea
 - `tests/cmux.test.ts` — unit tests for `CmuxManager`
 - `tests/multiplexer.test.ts` — tests for detection logic
 
-### Modified files
+### Modified files — source
 
 - `src/lib/tmux.ts` — add `implements TerminalMultiplexer`, add `readonly name = 'tmux'`
-- `src/commands/open.ts` — swap `new TmuxManager()` for `detectMultiplexer()`, type params as `TerminalMultiplexer`
+- `src/index.ts` — export `TerminalMultiplexer` interface and `detectMultiplexer` alongside existing `TmuxManager` export
+- `src/commands/open.ts` — swap `new TmuxManager()` for `detectMultiplexer()`, type params as `TerminalMultiplexer`, rename internal functions
+- `src/commands/worktrees/open.ts` — replace `new TmuxManager()` with `detectMultiplexer()`, refactor hardcoded tmux commands to use interface methods
+- `src/commands/worktrees/merge.ts` — replace `new TmuxManager()` with `detectMultiplexer()`
+- `src/commands/worktrees/remove.ts` — replace `new TmuxManager()` with `detectMultiplexer()`
+- `src/commands/worktree.ts` — replace `new TmuxManager()` with `detectMultiplexer()`
 - `src/types/index.ts` — rename `EventTmux` → `EventMultiplexer`, `requiresTmux` → `requiresMultiplexer`
+- `src/events/base.ts` — rename `EventTmux` import and `tmux` property to `multiplexer`
 - `src/events/registry.ts` — update method name and references
-- `src/events/extensions/claude.ts` — update property names
+- `src/events/extensions/claude.ts` — update property names (`requiresMultiplexer`, `static get multiplexer()`)
 - `src/events/extensions/npm.ts` — update property names
-- `src/events/core/cwd.ts` — update property name (`requiresMultiplexer: false`)
-- `src/events/core/ide.ts` — update property name (`requiresMultiplexer: false`)
+- `src/events/extensions/docker.ts` — update `requiresTmux` → `requiresMultiplexer`, `tmux` → `multiplexer`
+- `src/events/core/cwd.ts` — update property names
+- `src/events/core/ide.ts` — update property names
+- `src/events/core/web.ts` — update property names
+
+### Modified files — tests
+
+All tests referencing renamed symbols need updates:
+
+- `tests/events/registry.test.ts` — `getTmuxEnabledEvents` → `getMultiplexerEnabledEvents`, `requiresTmux` refs
+- `tests/events/base.test.ts` — `requiresTmux` refs
+- `tests/events/core/cwd.test.ts`, `ide.test.ts`, `web.test.ts` — `requiresTmux` refs
+- `tests/events/extensions/claude.test.ts`, `npm.test.ts`, `docker.test.ts` — `requiresTmux` refs
+- `tests/commands/open.test.ts` — `TmuxManager` mock → `TerminalMultiplexer` mock
+- `tests/commands/cli-index.test.ts`, `interactive.test.ts` — `TmuxManager` mock updates
+- `tests/lib/tmux.test.ts` — verify `TmuxManager implements TerminalMultiplexer`
 
 ### Untouched
 
-- `src/cli.ts`, `src/index.ts`
+- `src/cli.ts`
 - `src/lib/config.ts`, `src/lib/project.ts`, `src/lib/environment.ts`
 - `src/commands/interactive.ts`, `src/commands/manage.ts`, `src/commands/config/*`
-- `src/events/extensions/docker.ts`, `src/events/core/web.ts`
-- Existing tests (tmux behavior unchanged)
+
+### Documentation
+
+- `CLAUDE.md` — update `requiresTmux` reference to `requiresMultiplexer` in the event metadata documentation
 
 ## Future Work (out of scope)
 
