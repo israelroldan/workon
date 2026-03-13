@@ -84,30 +84,23 @@ describe('detectMultiplexer', () => {
     delete process.env.CMUX_WORKSPACE_ID;
     delete process.env.CMUX_SURFACE_ID;
 
-    // Override the TmuxManager mock to report unavailable
-    const { TmuxManager } = await import('../src/lib/tmux.js');
-    vi.mocked(TmuxManager).mockImplementation(
-      () =>
-        ({
-          name: 'tmux',
-          isAvailable: vi.fn().mockResolvedValue(false),
-        }) as any
-    );
-
-    // Also override CmuxManager to be unavailable (it won't be checked since
-    // no CMUX_ env vars are set, but be explicit)
-    const { CmuxManager } = await import('../src/lib/cmux.js');
-    vi.mocked(CmuxManager).mockImplementation(
-      () =>
-        ({
-          name: 'cmux',
-          isAvailable: vi.fn().mockResolvedValue(false),
-        }) as any
-    );
-
-    // Re-import detectMultiplexer to pick up the new mocks.
-    // Use vi.resetModules() + dynamic import to get a fresh module instance.
+    // Reset modules so fresh mocks take effect
     vi.resetModules();
+
+    // Re-register mocks with unavailable behavior BEFORE importing
+    vi.mock('../src/lib/tmux.js', () => ({
+      TmuxManager: vi.fn().mockImplementation(() => ({
+        name: 'tmux',
+        isAvailable: vi.fn().mockResolvedValue(false),
+      })),
+    }));
+    vi.mock('../src/lib/cmux.js', () => ({
+      CmuxManager: vi.fn().mockImplementation(() => ({
+        name: 'cmux',
+        isAvailable: vi.fn().mockResolvedValue(false),
+      })),
+    }));
+
     const { detectMultiplexer: freshDetect } = await import('../src/lib/multiplexer.js');
     const mux = await freshDetect();
     expect(mux).toBeNull();
@@ -514,9 +507,9 @@ In `src/commands/open.ts`:
 1. Replace import: `import { TmuxManager } from '../lib/tmux.js'` → `import { detectMultiplexer, type TerminalMultiplexer } from '../lib/multiplexer.js'`
 2. In `handleTmuxLayout()`:
    - Rename function to `handleMultiplexerLayout()`
-   - Replace `const tmux = new TmuxManager()` with parameter: accept `mux: TerminalMultiplexer | null` as first arg
-   - Replace `tmux.isTmuxAvailable()` with `mux !== null`
-   - Replace all `tmux.` method calls with `mux.` method calls
+   - Replace `const tmux = new TmuxManager()` (line 251) with `const mux = await detectMultiplexer()` — the multiplexer is created inside this function, not passed as a parameter
+   - Replace `await tmux.isTmuxAvailable()` checks with `mux !== null`
+   - Replace all `tmux.` method calls with `mux.` (guarded by the null check)
 3. In `buildLayoutShellCommands()`:
    - Change param type from `tmux: TmuxManager` to `mux: TerminalMultiplexer`
    - Replace `tmux.` with `mux.`
@@ -1036,7 +1029,7 @@ private async getCurrentSurfaceId(): Promise<string> {
 
 async createSplitSession(
   projectName: string,
-  projectPath: string,
+  _projectPath: string,
   claudeArgs: string[] = []
 ): Promise<string> {
   const sessionName = this.getSessionName(projectName);
@@ -1072,7 +1065,7 @@ async createSplitSession(
 
 async createThreePaneSession(
   projectName: string,
-  projectPath: string,
+  _projectPath: string,
   claudeArgs: string[] = [],
   npmCommand = 'npm run dev'
 ): Promise<string> {
@@ -1110,7 +1103,7 @@ async createThreePaneSession(
 
 async createTwoPaneNpmSession(
   projectName: string,
-  projectPath: string,
+  _projectPath: string,
   npmCommand = 'npm run dev'
 ): Promise<string> {
   const sessionName = this.getSessionName(projectName);
@@ -1257,7 +1250,6 @@ buildThreePaneShellCommands(
     `cmux new-workspace`,
     `CMUX_LEFT_SURFACE=$(cmux identify --json | jq -r '.surfaceId')`,
     `cmux new-split right`,
-    `CMUX_TOP_RIGHT_SURFACE=$(cmux identify --json | jq -r '.surfaceId')`,
     `cmux new-split down`,
     `CMUX_BOTTOM_RIGHT_SURFACE=$(cmux identify --json | jq -r '.surfaceId')`,
     `cmux send-surface "$CMUX_LEFT_SURFACE" '${claudeCommand}'`,
