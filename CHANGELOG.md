@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.8.0](https://github.com/israelroldan/workon/compare/v3.7.1...v3.8.0) (2026-03-30)
+
+
+### Features
+
+* add worktree recycle command ([#44](https://github.com/israelroldan/workon/issues/44)) ([51da805](https://github.com/israelroldan/workon/commit/51da8059d5d2ea439c1be5f3501f8cf265a9a09a))
+
 ## [3.7.1](https://github.com/israelroldan/workon/compare/v3.7.0...v3.7.1) (2026-03-30)
 
 
