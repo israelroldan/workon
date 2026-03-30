@@ -119,6 +119,30 @@ export function createWorktreeCommand(ctx: WorktreeContext): Command {
       await removeCurrentWorktree(worktreeInfo, options, ctx);
     });
 
+  // Subcommand: recycle
+  command
+    .command('recycle')
+    .description(
+      'Recycle this worktree for the next task: switch to its original branch and fast-forward to a remote branch'
+    )
+    .argument('[branch]', 'Remote branch to fast-forward to (auto-detects default)')
+    .option('-y, --yes', 'Skip confirmation prompt')
+    .action(async (branch: string | undefined, options: { yes?: boolean }) => {
+      const worktreeInfo = await detectWorktreeContext();
+
+      if (!worktreeInfo) {
+        log.error('Not in a git repository.');
+        process.exit(1);
+      }
+
+      if (!worktreeInfo.isWorktree) {
+        log.error("You're in the main repository, not a worktree.");
+        process.exit(1);
+      }
+
+      await recycleCurrentWorktree(worktreeInfo, branch, options, ctx);
+    });
+
   return command;
 }
 
@@ -168,6 +192,7 @@ async function showWorktreeStatus(worktreeInfo: WorktreeInfo, log: Logger): Prom
 
   console.log(`\n${chalk.bold('Commands:')}`);
   console.log(`  workon worktree merge   - Merge this branch and remove worktree`);
+  console.log(`  workon worktree recycle - Reset worktree for the next task`);
   console.log(`  workon worktree remove  - Remove this worktree`);
   console.log();
 }
@@ -407,4 +432,188 @@ async function removeCurrentWorktree(
       `  workon worktrees remove ${worktreeInfo.worktreeName}${options.force ? ' --force' : ''}`
     )
   );
+}
+
+/**
+ * Look up the branch associated with a worktree via `git worktree list --porcelain`.
+ * This returns the branch the worktree was created for, which may differ from
+ * the currently checked-out branch (worktreeInfo.branch) and from the
+ * directory-safe worktree name (worktreeInfo.worktreeName, where slashes become hyphens).
+ */
+async function getWorktreeAssociatedBranch(
+  mainRepoPath: string,
+  worktreePath: string
+): Promise<string | null> {
+  try {
+    const git = simpleGit(mainRepoPath);
+    const result = await git.raw(['worktree', 'list', '--porcelain']);
+    const blocks = result.trim().split('\n\n');
+
+    for (const block of blocks) {
+      if (!block.trim()) continue;
+      const lines = block.split('\n');
+      let wtPath = '';
+      let branch = '';
+
+      for (const line of lines) {
+        if (line.startsWith('worktree ')) {
+          wtPath = line.substring('worktree '.length);
+        } else if (line.startsWith('branch ')) {
+          branch = line.substring('branch refs/heads/'.length);
+        }
+      }
+
+      if (wtPath === worktreePath && branch) {
+        return branch;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Detect the default remote branch (main, master, develop, dev) by checking
+ * which ones exist as remote tracking branches.
+ */
+async function detectDefaultRemoteBranch(
+  git: ReturnType<typeof simpleGit>
+): Promise<string | null> {
+  const candidates = ['main', 'master', 'develop', 'dev'];
+  try {
+    const remoteRefs = await git.raw(['ls-remote', '--heads', 'origin']);
+    for (const candidate of candidates) {
+      if (remoteRefs.includes(`refs/heads/${candidate}`)) {
+        return candidate;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function recycleCurrentWorktree(
+  worktreeInfo: WorktreeInfo,
+  targetBranch: string | undefined,
+  options: { yes?: boolean },
+  ctx: WorktreeContext
+): Promise<void> {
+  const { log } = ctx;
+
+  if (!worktreeInfo.worktreePath || !worktreeInfo.worktreeName) {
+    log.error('Unable to determine worktree info.');
+    process.exit(1);
+  }
+
+  if (worktreeInfo.branch === '(detached)') {
+    log.error('Worktree is in detached HEAD state.');
+    log.info("Use 'git checkout <branch>' to switch to a branch first.");
+    process.exit(1);
+  }
+
+  const git = simpleGit(worktreeInfo.worktreePath);
+
+  // Resolve the worktree's associated branch (the real git branch name, not the dir-safe name)
+  const originalBranch = await getWorktreeAssociatedBranch(
+    worktreeInfo.mainRepoPath,
+    worktreeInfo.worktreePath
+  );
+
+  if (!originalBranch) {
+    log.error('Unable to determine the branch associated with this worktree.');
+    process.exit(1);
+  }
+
+  // Resolve target branch: use provided value, or detect the repo's default branch
+  if (!targetBranch) {
+    const detected = await detectDefaultRemoteBranch(git);
+    if (!detected) {
+      log.error('Could not detect default remote branch (tried main, master, develop, dev).');
+      log.info('Specify the branch explicitly: workon worktree recycle <branch>');
+      process.exit(1);
+    }
+    targetBranch = detected;
+  }
+
+  // Check for uncommitted changes
+  const status = await git.status();
+  const hasChanges =
+    status.modified.length > 0 ||
+    status.not_added.length > 0 ||
+    status.deleted.length > 0 ||
+    status.staged.length > 0 ||
+    status.created.length > 0 ||
+    status.renamed.length > 0 ||
+    status.conflicted.length > 0;
+
+  if (hasChanges) {
+    log.error('This worktree has uncommitted changes.');
+    log.info('Please commit, stash, or discard your changes before recycling.');
+    process.exit(1);
+  }
+
+  const alreadyOnBranch = worktreeInfo.branch === originalBranch;
+
+  // Confirm the operation
+  if (!options.yes) {
+    console.log(`\n${chalk.bold('Recycle worktree:')}`);
+    console.log(`  Worktree:  ${chalk.cyan(worktreeInfo.worktreeName)}`);
+    if (alreadyOnBranch) {
+      console.log(`  Branch:    ${chalk.green(originalBranch)} (already on it)`);
+    } else {
+      console.log(`  Current:   ${chalk.yellow(worktreeInfo.branch)}`);
+      console.log(`  Switch to: ${chalk.green(originalBranch)}`);
+    }
+    console.log(`  FF from:   ${chalk.green(`origin/${targetBranch}`)}`);
+    console.log();
+
+    const shouldProceed = await confirm({
+      message: 'Proceed?',
+      default: true,
+    });
+
+    if (!shouldProceed) {
+      log.info('Recycle cancelled.');
+      return;
+    }
+  }
+
+  const spinner = ora('Fetching latest from remote...').start();
+
+  try {
+    // Fetch the target branch from remote
+    await git.fetch('origin', targetBranch);
+
+    // Switch to the original branch if not already on it
+    if (!alreadyOnBranch) {
+      spinner.text = `Switching to branch '${originalBranch}'...`;
+      await git.checkout(originalBranch);
+    }
+
+    spinner.text = `Fast-forwarding '${originalBranch}' to origin/${targetBranch}...`;
+
+    // Fast-forward to the remote branch tip
+    await git.merge([`origin/${targetBranch}`, '--ff-only']);
+
+    spinner.succeed(`Recycled! '${originalBranch}' is now at the tip of origin/${targetBranch}`);
+    console.log(chalk.green('\nWorktree is ready for the next task.'));
+  } catch (error) {
+    const message = (error as Error).message;
+    spinner.fail('Recycle failed.');
+
+    if (message.includes('ff-only')) {
+      log.error(
+        `Cannot fast-forward '${originalBranch}' to origin/${targetBranch}. ` +
+          `The branch has diverged.`
+      );
+      log.info('You may need to reset or rebase manually.');
+    } else if (message.includes('did not match any')) {
+      log.error(`Remote branch 'origin/${targetBranch}' not found.`);
+    } else {
+      log.error(message);
+    }
+    process.exit(1);
+  }
 }

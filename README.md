@@ -219,6 +219,9 @@ workon worktree status
 # Merge this worktree's branch into main/master
 workon worktree merge
 
+# Recycle worktree for the next task (ff to latest main)
+workon worktree recycle
+
 # Remove this worktree (shows instructions to exit first)
 workon worktree remove
 ```
@@ -359,6 +362,8 @@ workon myproject::feat-x              # all events in worktree
 | `worktree merge` | `-i, --into <branch>` | Sets target branch explicitly |
 | `worktree merge` | `-s, --squash` | Uses squash merge (default: regular merge) |
 | `worktree merge` | `--delete-branch` | Deletes merged branch (avoids prompt) |
+| `worktree recycle` | `[branch]` | Remote branch to fast-forward to (auto-detects main/master/develop/dev) |
+| `worktree recycle` | `-y, --yes` | Skips confirmation prompt |
 | `worktree remove` | `-y, --yes` | Skips confirmation prompt |
 | `worktree remove` | `-f, --force` | Force-removes with uncommitted changes |
 
@@ -386,8 +391,11 @@ workon worktrees add my-feature
 
 # 4. Push, create a PR, get it reviewed and merged
 
-# 5. Tear down the worktree
+# 5a. Tear down the worktree
 workon worktrees remove my-feature
+
+# 5b. Or recycle for the next task (ff to latest main, keep worktree)
+workon worktree recycle
 ```
 
 **Automated workflow (non-interactive, agent-friendly):**
@@ -407,8 +415,11 @@ workon worktrees add my-feature -b main -y -o
 workon worktrees branch my-feature pr-branch -y -p
 # ... PR merged via gh/API ...
 
-# 5. Tear down: remove worktree and delete the branch
+# 5a. Tear down: remove worktree and delete the branch
 workon worktrees remove my-feature -y
+
+# 5b. Or recycle: ff to latest main and reuse for the next task
+workon worktree recycle -y
 ```
 
 The key difference is that every step in the automated version completes without waiting for user input, making it safe to chain together in scripts or have an AI agent drive the entire flow.
