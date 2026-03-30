@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.7.1](https://github.com/israelroldan/workon/compare/v3.7.0...v3.7.1) (2026-03-30)
+
+
+### Bug Fixes
+
+* worktree-specific tmux session names in colon syntax ([#42](https://github.com/israelroldan/workon/issues/42)) ([8d1529d](https://github.com/israelroldan/workon/commit/8d1529d63c42b6581be65b6bd1a4020b6080af81))
+
 ## [3.7.0](https://github.com/israelroldan/workon/compare/v3.6.0...v3.7.0) (2026-03-30)
 
 
