@@ -43,10 +43,12 @@ export class TmuxManager {
   }
 
   getWorktreeSessionName(projectName: string, worktreeName: string): string {
-    // Session name format: workon-{project}-{worktree}
+    // Session name format: workon-{project}_wt_{worktree}
+    // Uses _wt_ delimiter to avoid ambiguity with hyphens in project/worktree names
+    // (e.g., project "foo-bar" worktree "baz" vs project "foo" worktree "bar-baz")
     const sanitizedProject = sanitizeForShell(projectName);
     const sanitizedWorktree = sanitizeForShell(worktreeName);
-    return `${this.sessionPrefix}${sanitizedProject}-${sanitizedWorktree}`;
+    return `${this.sessionPrefix}${sanitizedProject}_wt_${sanitizedWorktree}`;
   }
 
   async killSession(sessionName: string): Promise<boolean> {

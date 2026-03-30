@@ -102,6 +102,13 @@ async function processProject(
 
   // Handle "this" or "." for current project
   if (environment.$isProjectEnvironment && (projectName === 'this' || projectName === '.')) {
+    if (worktreeName) {
+      log.error(
+        `Worktree syntax is not supported with '${projectName}'. Use the full project name instead:`
+      );
+      log.info(`  workon ${environment.project.name}::${worktreeName}`);
+      process.exit(1);
+    }
     log.info(`Opening current project: ${environment.project.name}`);
     await switchTo(environment, requestedCommands, options, ctx);
     return;
@@ -138,7 +145,7 @@ async function processProject(
       projectEnv.project.overridePath(worktree.path);
     }
 
-    await switchTo(projectEnv, requestedCommands, options, ctx);
+    await switchTo(projectEnv, requestedCommands, options, ctx, worktreeName);
   } else {
     log.error(`Project '${projectName}' not found.`);
     log.info(`Run 'workon' without arguments to see available projects or create a new one.`);
@@ -167,7 +174,8 @@ async function switchTo(
   environment: ProjectEnvironment,
   requestedCommands: string[] | null,
   options: OpenOptions,
-  ctx: OpenContext
+  ctx: OpenContext,
+  worktreeName?: string | null
 ): Promise<void> {
   const { log } = ctx;
   const project = environment.project;
@@ -200,11 +208,35 @@ async function switchTo(
   const dryRun = options.dryRun || false;
 
   if (hasCwd && hasClaudeEvent && hasNpmEvent) {
-    await handleThreePaneLayout(project, isShellMode, dryRun, shellCommands, events, ctx);
+    await handleThreePaneLayout(
+      project,
+      isShellMode,
+      dryRun,
+      shellCommands,
+      events,
+      ctx,
+      worktreeName
+    );
   } else if (hasCwd && hasNpmEvent) {
-    await handleTwoPaneNpmLayout(project, isShellMode, dryRun, shellCommands, events, ctx);
+    await handleTwoPaneNpmLayout(
+      project,
+      isShellMode,
+      dryRun,
+      shellCommands,
+      events,
+      ctx,
+      worktreeName
+    );
   } else if (hasCwd && hasClaudeEvent) {
-    await handleSplitTerminal(project, isShellMode, dryRun, shellCommands, events, ctx);
+    await handleSplitTerminal(
+      project,
+      isShellMode,
+      dryRun,
+      shellCommands,
+      events,
+      ctx,
+      worktreeName
+    );
   } else {
     // Normal event processing
     for (const event of events) {
@@ -273,11 +305,18 @@ async function handleTmuxLayout(
   options: { isShellMode: boolean; dryRun: boolean },
   shellCommands: string[],
   events: string[],
-  ctx: OpenContext
+  ctx: OpenContext,
+  worktreeName?: string | null
 ): Promise<void> {
   const { log } = ctx;
   const tmux = new TmuxManager();
   const { isShellMode, dryRun } = options;
+
+  // When a worktree is specified, use a worktree-specific tmux session name
+  // so it doesn't collide with the main project's session.
+  // Uses _wt_ delimiter to match getWorktreeSessionName() and avoid ambiguity
+  // with hyphens in project/worktree names.
+  const tmuxSessionId = worktreeName ? `${project.name}_wt_${worktreeName}` : project.name;
 
   let tmuxHandled = false;
 
@@ -299,7 +338,7 @@ async function handleTmuxLayout(
       }
 
       // Now add all tmux commands (create session, split panes, attach)
-      const commands = buildLayoutShellCommands(tmux, project, layout);
+      const commands = buildLayoutShellCommands(tmux, tmuxSessionId, project, layout);
       shellCommands.push(...commands);
       tmuxHandled = true;
     } else {
@@ -313,7 +352,7 @@ async function handleTmuxLayout(
   } else if (!dryRun) {
     if (await tmux.isTmuxAvailable()) {
       try {
-        const sessionName = await createTmuxSession(tmux, project, layout);
+        const sessionName = await createTmuxSession(tmux, tmuxSessionId, project, layout);
         await tmux.attachToSession(sessionName);
         tmuxHandled = true;
       } catch (error) {
@@ -345,21 +384,22 @@ async function handleTmuxLayout(
 
 function buildLayoutShellCommands(
   tmux: TmuxManager,
+  sessionId: string,
   project: Project,
   layout: LayoutConfig
 ): string[] {
   switch (layout.type) {
     case 'split-claude':
-      return tmux.buildShellCommands(project.name, project.path.path, layout.claudeArgs);
+      return tmux.buildShellCommands(sessionId, project.path.path, layout.claudeArgs);
     case 'three-pane':
       return tmux.buildThreePaneShellCommands(
-        project.name,
+        sessionId,
         project.path.path,
         layout.claudeArgs,
         layout.npmCommand!
       );
     case 'two-pane-npm':
-      return tmux.buildTwoPaneNpmShellCommands(project.name, project.path.path, layout.npmCommand!);
+      return tmux.buildTwoPaneNpmShellCommands(sessionId, project.path.path, layout.npmCommand!);
   }
 }
 
@@ -394,21 +434,22 @@ function buildFallbackCommandsWithEvents(
 
 async function createTmuxSession(
   tmux: TmuxManager,
+  sessionId: string,
   project: Project,
   layout: LayoutConfig
 ): Promise<string> {
   switch (layout.type) {
     case 'split-claude':
-      return tmux.createSplitSession(project.name, project.path.path, layout.claudeArgs);
+      return tmux.createSplitSession(sessionId, project.path.path, layout.claudeArgs);
     case 'three-pane':
       return tmux.createThreePaneSession(
-        project.name,
+        sessionId,
         project.path.path,
         layout.claudeArgs,
         layout.npmCommand!
       );
     case 'two-pane-npm':
-      return tmux.createTwoPaneNpmSession(project.name, project.path.path, layout.npmCommand!);
+      return tmux.createTwoPaneNpmSession(sessionId, project.path.path, layout.npmCommand!);
   }
 }
 
@@ -418,16 +459,26 @@ async function handleSplitTerminal(
   dryRun: boolean,
   shellCommands: string[],
   events: string[],
-  ctx: OpenContext
+  ctx: OpenContext,
+  worktreeName?: string | null
 ): Promise<void> {
+  const sessionLabel = worktreeName ? `${project.name}::${worktreeName}` : project.name;
   const layout: LayoutConfig = {
     type: 'split-claude',
     handledEvents: ['cwd', 'claude'],
-    dryRunMessage: `Would create split tmux session '${project.name}' with Claude`,
+    dryRunMessage: `Would create split tmux session '${sessionLabel}' with Claude`,
     claudeArgs: getClaudeArgs(project),
     npmCommand: null,
   };
-  await handleTmuxLayout(project, layout, { isShellMode, dryRun }, shellCommands, events, ctx);
+  await handleTmuxLayout(
+    project,
+    layout,
+    { isShellMode, dryRun },
+    shellCommands,
+    events,
+    ctx,
+    worktreeName
+  );
 }
 
 async function handleThreePaneLayout(
@@ -436,16 +487,26 @@ async function handleThreePaneLayout(
   dryRun: boolean,
   shellCommands: string[],
   events: string[],
-  ctx: OpenContext
+  ctx: OpenContext,
+  worktreeName?: string | null
 ): Promise<void> {
+  const sessionLabel = worktreeName ? `${project.name}::${worktreeName}` : project.name;
   const layout: LayoutConfig = {
     type: 'three-pane',
     handledEvents: ['cwd', 'claude', 'npm'],
-    dryRunMessage: `Would create three-pane tmux session '${project.name}' with Claude and NPM`,
+    dryRunMessage: `Would create three-pane tmux session '${sessionLabel}' with Claude and NPM`,
     claudeArgs: getClaudeArgs(project),
     npmCommand: await getNpmCommand(project),
   };
-  await handleTmuxLayout(project, layout, { isShellMode, dryRun }, shellCommands, events, ctx);
+  await handleTmuxLayout(
+    project,
+    layout,
+    { isShellMode, dryRun },
+    shellCommands,
+    events,
+    ctx,
+    worktreeName
+  );
 }
 
 async function handleTwoPaneNpmLayout(
@@ -454,16 +515,26 @@ async function handleTwoPaneNpmLayout(
   dryRun: boolean,
   shellCommands: string[],
   events: string[],
-  ctx: OpenContext
+  ctx: OpenContext,
+  worktreeName?: string | null
 ): Promise<void> {
+  const sessionLabel = worktreeName ? `${project.name}::${worktreeName}` : project.name;
   const layout: LayoutConfig = {
     type: 'two-pane-npm',
     handledEvents: ['cwd', 'npm'],
-    dryRunMessage: `Would create two-pane tmux session '${project.name}' with NPM`,
+    dryRunMessage: `Would create two-pane tmux session '${sessionLabel}' with NPM`,
     claudeArgs: [],
     npmCommand: await getNpmCommand(project),
   };
-  await handleTmuxLayout(project, layout, { isShellMode, dryRun }, shellCommands, events, ctx);
+  await handleTmuxLayout(
+    project,
+    layout,
+    { isShellMode, dryRun },
+    shellCommands,
+    events,
+    ctx,
+    worktreeName
+  );
 }
 
 async function processEvent(
