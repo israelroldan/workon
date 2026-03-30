@@ -20,6 +20,7 @@ interface MergeOptions {
   squash?: boolean;
   keep?: boolean;
   yes?: boolean;
+  deleteBranch?: boolean;
 }
 
 export function createMergeCommand(ctx: WorktreesContext): Command {
@@ -32,6 +33,7 @@ export function createMergeCommand(ctx: WorktreesContext): Command {
     .option('-s, --squash', 'Use squash merge')
     .option('-k, --keep', 'Keep the worktree after merging')
     .option('-y, --yes', 'Skip confirmation prompts')
+    .option('--delete-branch', 'Delete the merged branch after merge')
     .action(async (name: string, options: MergeOptions) => {
       const projectCtx = await resolveProjectFromCwd(config, log);
 
@@ -90,14 +92,19 @@ export function createMergeCommand(ctx: WorktreesContext): Command {
         const defaultTarget =
           commonTargets.find((t) => targetBranches.includes(t)) || targetBranches[0];
 
-        targetBranch = await select({
-          message: `Merge '${worktree.branch}' into which branch?`,
-          choices: targetBranches.map((b) => ({
-            name: b,
-            value: b,
-          })),
-          default: defaultTarget,
-        });
+        if (options.yes) {
+          targetBranch = defaultTarget;
+          log.info(`Auto-selected target branch: '${targetBranch}'`);
+        } else {
+          targetBranch = await select({
+            message: `Merge '${worktree.branch}' into which branch?`,
+            choices: targetBranches.map((b) => ({
+              name: b,
+              value: b,
+            })),
+            default: defaultTarget,
+          });
+        }
       }
 
       // Verify target branch exists
@@ -150,6 +157,13 @@ export function createMergeCommand(ctx: WorktreesContext): Command {
         process.exit(1);
       }
 
+      // Warn about conflicting flags
+      if (options.keep && options.deleteBranch) {
+        log.warn(
+          '--delete-branch is ignored when --keep is set (branch is needed by the worktree).'
+        );
+      }
+
       // Remove worktree if not keeping
       if (!options.keep) {
         // Kill any associated tmux session
@@ -171,22 +185,23 @@ export function createMergeCommand(ctx: WorktreesContext): Command {
         }
 
         // Optionally delete the branch
-        if (!options.yes) {
-          const shouldDeleteBranch = await confirm({
+        let shouldDeleteBranch = options.deleteBranch || false;
+        if (!shouldDeleteBranch && !options.yes) {
+          shouldDeleteBranch = await confirm({
             message: `Delete the merged branch '${worktree.branch}'?`,
             default: false,
           });
+        }
 
-          if (shouldDeleteBranch) {
-            const deleteSpinner = ora(`Deleting branch '${worktree.branch}'...`).start();
-            try {
-              const { simpleGit } = await import('simple-git');
-              const git = simpleGit(projectPath);
-              await git.deleteLocalBranch(worktree.branch, true);
-              deleteSpinner.succeed(`Branch '${worktree.branch}' deleted`);
-            } catch (error) {
-              deleteSpinner.warn(`Failed to delete branch: ${(error as Error).message}`);
-            }
+        if (shouldDeleteBranch) {
+          const deleteSpinner = ora(`Deleting branch '${worktree.branch}'...`).start();
+          try {
+            const { simpleGit } = await import('simple-git');
+            const git = simpleGit(projectPath);
+            await git.deleteLocalBranch(worktree.branch, true);
+            deleteSpinner.succeed(`Branch '${worktree.branch}' deleted`);
+          } catch (error) {
+            deleteSpinner.warn(`Failed to delete branch: ${(error as Error).message}`);
           }
         }
       }

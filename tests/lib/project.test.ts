@@ -77,6 +77,24 @@ describe('Project', () => {
     });
   });
 
+  describe('overridePath', () => {
+    it('should override the project path with an absolute path', () => {
+      const project = new Project('test', { path: 'myapp', events: {} }, { base: '/code' });
+      expect(project.path.path).toBe('/code/myapp');
+
+      project.overridePath('/worktrees/feat-x');
+      expect(project.path.path).toBe('/worktrees/feat-x');
+    });
+
+    it('should handle tilde paths', () => {
+      const project = new Project('test', { path: 'myapp', events: {} }, { base: '/code' });
+
+      project.overridePath('~/worktrees/feat-x');
+      expect(project.path.path).not.toContain('~/');
+      expect(project.path.path).toContain('worktrees/feat-x');
+    });
+  });
+
   describe('absolute path with base', () => {
     it('should not mangle absolute paths when base is set', () => {
       const project = new Project(

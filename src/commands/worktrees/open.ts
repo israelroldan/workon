@@ -1,6 +1,5 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import File from 'phylo';
 import path from 'path';
 import type { Config } from '../../lib/config.js';
 import type { Logger, Project } from '../../types/index.js';
@@ -19,6 +18,7 @@ interface OpenOptions {
   debug?: boolean;
   shell?: boolean;
   attach?: boolean; // Default true, set false to create session without attaching
+  yes?: boolean;
 }
 
 export function createOpenCommand(ctx: WorktreesContext): Command {
@@ -29,6 +29,7 @@ export function createOpenCommand(ctx: WorktreesContext): Command {
     .argument('<name>', 'Worktree name')
     .option('-d, --debug', 'Enable debug logging')
     .option('--shell', 'Output shell commands instead of spawning processes')
+    .option('-y, --yes', 'Skip all confirmation prompts (non-interactive mode)')
     .action(async (name: string, options: OpenOptions) => {
       if (options.debug) {
         log.setLogLevel('debug');
@@ -48,12 +49,16 @@ export function createOpenCommand(ctx: WorktreesContext): Command {
 
       // For full tmux layout, we need registration (for events config)
       if (!projectCtx.isRegistered) {
-        log.warn('Project is not registered. Opening with basic shell layout.');
-        const shouldRegister = await promptToRegisterProject(projectCtx.projectPath, config, log);
-        if (shouldRegister) {
-          projectCtx.projectName = shouldRegister.projectName;
-          projectCtx.projectConfig = shouldRegister.projectConfig;
-          projectCtx.isRegistered = true;
+        if (options.yes) {
+          log.info('Project is not registered. Opening with basic shell layout.');
+        } else {
+          log.warn('Project is not registered. Opening with basic shell layout.');
+          const shouldRegister = await promptToRegisterProject(projectCtx.projectPath, config, log);
+          if (shouldRegister) {
+            projectCtx.projectName = shouldRegister.projectName;
+            projectCtx.projectConfig = shouldRegister.projectConfig;
+            projectCtx.isRegistered = true;
+          }
         }
       }
 
@@ -102,10 +107,7 @@ export async function runWorktreeOpen(
   if (isRegistered && projectName && projectConfig) {
     // Create a project instance with the worktree path
     project = new ProjectClass(projectName, projectConfig, defaults) as unknown as Project;
-    // Override the internal _path directly to bypass the setter which would join with base
-    // The worktree path is already absolute, so we just need to wrap it in a phylo File object
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (project as any)._path = File.from(worktree.path).absolutify();
+    project.overridePath(worktree.path);
 
     const events = project.events || {};
     hasClaudeEvent = !!events.claude;

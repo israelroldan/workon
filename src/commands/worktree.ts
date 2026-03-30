@@ -70,22 +70,31 @@ export function createWorktreeCommand(ctx: WorktreeContext): Command {
     .option('-s, --squash', 'Use squash merge')
     .option('-k, --keep', 'Keep the worktree after merging')
     .option('-y, --yes', 'Skip confirmation prompts')
-    .action(async (options: { into?: string; squash?: boolean; keep?: boolean; yes?: boolean }) => {
-      const worktreeInfo = await detectWorktreeContext();
+    .option('--delete-branch', 'Delete the merged branch after merge')
+    .action(
+      async (options: {
+        into?: string;
+        squash?: boolean;
+        keep?: boolean;
+        yes?: boolean;
+        deleteBranch?: boolean;
+      }) => {
+        const worktreeInfo = await detectWorktreeContext();
 
-      if (!worktreeInfo) {
-        log.error('Not in a git repository.');
-        process.exit(1);
+        if (!worktreeInfo) {
+          log.error('Not in a git repository.');
+          process.exit(1);
+        }
+
+        if (!worktreeInfo.isWorktree) {
+          log.error("You're in the main repository, not a worktree.");
+          log.info(`Use 'workon worktrees merge <name>' from the main repository.`);
+          process.exit(1);
+        }
+
+        await mergeCurrentWorktree(worktreeInfo, options, ctx);
       }
-
-      if (!worktreeInfo.isWorktree) {
-        log.error("You're in the main repository, not a worktree.");
-        log.info(`Use 'workon worktrees merge <name>' from the main repository.`);
-        process.exit(1);
-      }
-
-      await mergeCurrentWorktree(worktreeInfo, options, ctx);
-    });
+    );
 
   // Subcommand: remove
   command
@@ -165,7 +174,13 @@ async function showWorktreeStatus(worktreeInfo: WorktreeInfo, log: Logger): Prom
 
 async function mergeCurrentWorktree(
   worktreeInfo: WorktreeInfo,
-  options: { into?: string; squash?: boolean; keep?: boolean; yes?: boolean },
+  options: {
+    into?: string;
+    squash?: boolean;
+    keep?: boolean;
+    yes?: boolean;
+    deleteBranch?: boolean;
+  },
   ctx: WorktreeContext
 ): Promise<void> {
   const { log } = ctx;
@@ -206,11 +221,16 @@ async function mergeCurrentWorktree(
     const defaultTarget =
       commonTargets.find((t) => targetBranches.includes(t)) || targetBranches[0];
 
-    targetBranch = await select({
-      message: `Merge '${worktreeInfo.branch}' into which branch?`,
-      choices: targetBranches.map((b) => ({ name: b, value: b })),
-      default: defaultTarget,
-    });
+    if (options.yes) {
+      targetBranch = defaultTarget;
+      log.info(`Auto-selected target branch: '${targetBranch}'`);
+    } else {
+      targetBranch = await select({
+        message: `Merge '${worktreeInfo.branch}' into which branch?`,
+        choices: targetBranches.map((b) => ({ name: b, value: b })),
+        default: defaultTarget,
+      });
+    }
   }
 
   // Verify target branch exists
@@ -263,14 +283,23 @@ async function mergeCurrentWorktree(
     process.exit(1);
   }
 
+  // Warn about conflicting flags
+  if (options.keep && options.deleteBranch) {
+    log.warn('--delete-branch is ignored when --keep is set (branch is needed by the worktree).');
+  }
+
   // Remove worktree if not keeping
   if (!options.keep) {
-    log.warn('You need to exit this worktree directory before it can be removed.');
+    let shouldContinue = true;
 
-    const shouldContinue = await confirm({
-      message: `Remove worktree '${worktreeInfo.worktreeName}'? (You'll need to cd out first)`,
-      default: true,
-    });
+    if (!options.yes) {
+      log.warn('You need to exit this worktree directory before it can be removed.');
+
+      shouldContinue = await confirm({
+        message: `Remove worktree '${worktreeInfo.worktreeName}'? (You'll need to cd out first)`,
+        default: true,
+      });
+    }
 
     if (shouldContinue) {
       // Kill any associated tmux session
@@ -290,21 +319,22 @@ async function mergeCurrentWorktree(
     }
 
     // Ask about deleting the branch
-    if (!options.yes) {
-      const shouldDeleteBranch = await confirm({
+    let shouldDeleteBranch = options.deleteBranch || false;
+    if (!shouldDeleteBranch && !options.yes) {
+      shouldDeleteBranch = await confirm({
         message: `Delete the merged branch '${worktreeInfo.branch}'?`,
         default: false,
       });
+    }
 
-      if (shouldDeleteBranch) {
-        const deleteSpinner = ora(`Deleting branch '${worktreeInfo.branch}'...`).start();
-        try {
-          const git = simpleGit(worktreeInfo.mainRepoPath);
-          await git.deleteLocalBranch(worktreeInfo.branch!, true);
-          deleteSpinner.succeed(`Branch '${worktreeInfo.branch}' deleted`);
-        } catch (error) {
-          deleteSpinner.warn(`Failed to delete branch: ${(error as Error).message}`);
-        }
+    if (shouldDeleteBranch) {
+      const deleteSpinner = ora(`Deleting branch '${worktreeInfo.branch}'...`).start();
+      try {
+        const git = simpleGit(worktreeInfo.mainRepoPath);
+        await git.deleteLocalBranch(worktreeInfo.branch!, true);
+        deleteSpinner.succeed(`Branch '${worktreeInfo.branch}' deleted`);
+      } catch (error) {
+        deleteSpinner.warn(`Failed to delete branch: ${(error as Error).message}`);
       }
     }
   }
