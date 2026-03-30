@@ -313,8 +313,10 @@ async function handleTmuxLayout(
   const { isShellMode, dryRun } = options;
 
   // When a worktree is specified, use a worktree-specific tmux session name
-  // so it doesn't collide with the main project's session
-  const tmuxSessionId = worktreeName ? `${project.name}-${worktreeName}` : project.name;
+  // so it doesn't collide with the main project's session.
+  // Uses _wt_ delimiter to match getWorktreeSessionName() and avoid ambiguity
+  // with hyphens in project/worktree names.
+  const tmuxSessionId = worktreeName ? `${project.name}_wt_${worktreeName}` : project.name;
 
   let tmuxHandled = false;
 
