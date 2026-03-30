@@ -435,38 +435,39 @@ async function removeCurrentWorktree(
 }
 
 /**
- * Look up the branch associated with a worktree via `git worktree list --porcelain`.
- * This returns the branch the worktree was created for, which may differ from
- * the currently checked-out branch (worktreeInfo.branch) and from the
- * directory-safe worktree name (worktreeInfo.worktreeName, where slashes become hyphens).
+ * Resolve the original branch a worktree was created for.
+ *
+ * We cannot rely on the `branch` field from `git worktree list --porcelain`
+ * because that reflects the *currently checked-out* branch, which may have
+ * changed (e.g., after `worktrees branch feat-x pr-branch`).
+ *
+ * Instead, we use the WorktreeManager which created the worktree: worktree
+ * names are derived from branches via `branchToDir()` (slashes → hyphens).
+ * We look up the worktree by name and get its original branch from the
+ * manager's data, which cross-references the worktree path against
+ * `git worktree list` and the managed worktrees directory.
  */
-async function getWorktreeAssociatedBranch(
+async function getWorktreeOriginalBranch(
   mainRepoPath: string,
-  worktreePath: string
+  worktreeName: string
 ): Promise<string | null> {
   try {
+    const manager = new WorktreeManager(mainRepoPath);
+    const worktree = await manager.get(worktreeName);
+    if (worktree && worktree.branch && worktree.branch !== '(detached)') {
+      return worktree.branch;
+    }
+
+    // Fallback: check all local branches for one whose branchToDir form
+    // matches the worktree name (handles external worktrees)
     const git = simpleGit(mainRepoPath);
-    const result = await git.raw(['worktree', 'list', '--porcelain']);
-    const blocks = result.trim().split('\n\n');
-
-    for (const block of blocks) {
-      if (!block.trim()) continue;
-      const lines = block.split('\n');
-      let wtPath = '';
-      let branch = '';
-
-      for (const line of lines) {
-        if (line.startsWith('worktree ')) {
-          wtPath = line.substring('worktree '.length);
-        } else if (line.startsWith('branch ')) {
-          branch = line.substring('branch refs/heads/'.length);
-        }
-      }
-
-      if (wtPath === worktreePath && branch) {
-        return branch;
+    const branches = await git.branchLocal();
+    for (const branchName of branches.all) {
+      if (branchName.replace(/\//g, '-') === worktreeName) {
+        return branchName;
       }
     }
+
     return null;
   } catch {
     return null;
@@ -483,8 +484,17 @@ async function detectDefaultRemoteBranch(
   const candidates = ['main', 'master', 'develop', 'dev'];
   try {
     const remoteRefs = await git.raw(['ls-remote', '--heads', 'origin']);
+    // Parse each line and extract exact ref names to avoid prefix matching
+    // (e.g., "refs/heads/mainline" should not match "main")
+    const refNames = new Set(
+      remoteRefs
+        .trim()
+        .split('\n')
+        .filter((line) => line.includes('refs/heads/'))
+        .map((line) => line.replace(/.*refs\/heads\//, ''))
+    );
     for (const candidate of candidates) {
-      if (remoteRefs.includes(`refs/heads/${candidate}`)) {
+      if (refNames.has(candidate)) {
         return candidate;
       }
     }
@@ -515,10 +525,10 @@ async function recycleCurrentWorktree(
 
   const git = simpleGit(worktreeInfo.worktreePath);
 
-  // Resolve the worktree's associated branch (the real git branch name, not the dir-safe name)
-  const originalBranch = await getWorktreeAssociatedBranch(
+  // Resolve the worktree's original branch (the branch it was created for, not the current checkout)
+  const originalBranch = await getWorktreeOriginalBranch(
     worktreeInfo.mainRepoPath,
-    worktreeInfo.worktreePath
+    worktreeInfo.worktreeName
   );
 
   if (!originalBranch) {
