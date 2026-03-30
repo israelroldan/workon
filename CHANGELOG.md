@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.7.0](https://github.com/israelroldan/workon/compare/v3.6.0...v3.7.0) (2026-03-30)
+
+
+### Features
+
+* make worktree commands non-interactive for AI agents ([#40](https://github.com/israelroldan/workon/issues/40)) ([916f4ca](https://github.com/israelroldan/workon/commit/916f4ca68b8140936a8e629722284edc8bf5387f))
+
 ## [3.6.0](https://github.com/israelroldan/workon/compare/v3.5.2...v3.6.0) (2026-03-04)
 
 
