@@ -135,9 +135,7 @@ async function processProject(
       }
 
       log.debug(`Using worktree path: ${worktree.path}`);
-      // Override the internal _path directly to bypass the setter which would join with base
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (projectEnv.project as any)._path = File.from(worktree.path).absolutify();
+      projectEnv.project.overridePath(worktree.path);
     }
 
     await switchTo(projectEnv, requestedCommands, options, ctx);

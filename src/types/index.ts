@@ -122,6 +122,7 @@ export interface Project {
   events: EventsConfig;
   branch?: string;
   base?: { path: string };
+  overridePath(absolutePath: string): void;
 }
 
 // Environment types

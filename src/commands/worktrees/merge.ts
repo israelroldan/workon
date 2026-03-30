@@ -92,14 +92,19 @@ export function createMergeCommand(ctx: WorktreesContext): Command {
         const defaultTarget =
           commonTargets.find((t) => targetBranches.includes(t)) || targetBranches[0];
 
-        targetBranch = await select({
-          message: `Merge '${worktree.branch}' into which branch?`,
-          choices: targetBranches.map((b) => ({
-            name: b,
-            value: b,
-          })),
-          default: defaultTarget,
-        });
+        if (options.yes) {
+          targetBranch = defaultTarget;
+          log.info(`Auto-selected target branch: '${targetBranch}'`);
+        } else {
+          targetBranch = await select({
+            message: `Merge '${worktree.branch}' into which branch?`,
+            choices: targetBranches.map((b) => ({
+              name: b,
+              value: b,
+            })),
+            default: defaultTarget,
+          });
+        }
       }
 
       // Verify target branch exists
@@ -150,6 +155,13 @@ export function createMergeCommand(ctx: WorktreesContext): Command {
         mergeSpinner.fail(`Merge failed: ${(error as Error).message}`);
         log.info('You may need to resolve conflicts manually.');
         process.exit(1);
+      }
+
+      // Warn about conflicting flags
+      if (options.keep && options.deleteBranch) {
+        log.warn(
+          '--delete-branch is ignored when --keep is set (branch is needed by the worktree).'
+        );
       }
 
       // Remove worktree if not keeping

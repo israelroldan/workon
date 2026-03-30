@@ -328,6 +328,11 @@ workon myproject::feat-x              # all events in worktree
 
 ### Non-Interactive Flags Reference
 
+> **`worktrees` (plural)** = manage worktrees from the **main repo**.
+> **`worktree` (singular)** = operate on the worktree **you're currently inside**.
+
+**`workon worktrees` (from main repo)**
+
 | Command | Flag | Effect when set |
 |---------|------|-----------------|
 | `worktrees add` | `-y, --yes` | Skips registration prompt, auto-defaults base branch, skips "open session?" prompt |
@@ -340,12 +345,19 @@ workon myproject::feat-x              # all events in worktree
 | `worktrees remove` | `-y, --yes` | Skips confirmation prompt |
 | `worktrees remove` | `-f, --force` | Force-removes with uncommitted changes |
 | `worktrees remove` | `--no-hook` | Skips pre-teardown hook |
-| `worktrees merge` | `-y, --yes` | Skips all confirmation prompts |
-| `worktrees merge` | `-i, --into <branch>` | Sets target branch (avoids selection prompt) |
-| `worktrees merge` | `-s, --squash` | Uses squash merge (avoids prompt) |
+| `worktrees merge` | `-y, --yes` | Skips all prompts, auto-selects target branch (main/master/develop/dev) |
+| `worktrees merge` | `-i, --into <branch>` | Sets target branch explicitly |
+| `worktrees merge` | `-s, --squash` | Uses squash merge (default: regular merge) |
 | `worktrees merge` | `-k, --keep` | Keeps worktree after merge |
 | `worktrees merge` | `--delete-branch` | Deletes merged branch (avoids prompt) |
-| `worktree merge` | `-y, --yes` | Skips all confirmation prompts |
+
+**`workon worktree` (from inside a worktree)**
+
+| Command | Flag | Effect when set |
+|---------|------|-----------------|
+| `worktree merge` | `-y, --yes` | Skips all prompts, auto-selects target branch (main/master/develop/dev) |
+| `worktree merge` | `-i, --into <branch>` | Sets target branch explicitly |
+| `worktree merge` | `-s, --squash` | Uses squash merge (default: regular merge) |
 | `worktree merge` | `--delete-branch` | Deletes merged branch (avoids prompt) |
 | `worktree remove` | `-y, --yes` | Skips confirmation prompt |
 | `worktree remove` | `-f, --force` | Force-removes with uncommitted changes |

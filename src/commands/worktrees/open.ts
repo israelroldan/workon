@@ -1,6 +1,5 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import File from 'phylo';
 import path from 'path';
 import type { Config } from '../../lib/config.js';
 import type { Logger, Project } from '../../types/index.js';
@@ -108,10 +107,7 @@ export async function runWorktreeOpen(
   if (isRegistered && projectName && projectConfig) {
     // Create a project instance with the worktree path
     project = new ProjectClass(projectName, projectConfig, defaults) as unknown as Project;
-    // Override the internal _path directly to bypass the setter which would join with base
-    // The worktree path is already absolute, so we just need to wrap it in a phylo File object
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (project as any)._path = File.from(worktree.path).absolutify();
+    project.overridePath(worktree.path);
 
     const events = project.events || {};
     hasClaudeEvent = !!events.claude;

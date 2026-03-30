@@ -85,6 +85,14 @@ export class Project {
     return this._path;
   }
 
+  /**
+   * Override the project path with an absolute path.
+   * Used when targeting a worktree instead of the main project directory.
+   */
+  overridePath(absolutePath: string): void {
+    this._path = File.from(absolutePath).absolutify();
+  }
+
   set branch(branch: string | undefined) {
     this._branch = branch;
   }

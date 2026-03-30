@@ -201,6 +201,125 @@ describe('colon syntax parsing', () => {
   });
 });
 
+describe('worktree colon syntax (project:events:worktree)', () => {
+  let config: Config;
+  let mockLog: {
+    debug: ReturnType<typeof vi.fn>;
+    info: ReturnType<typeof vi.fn>;
+    log: ReturnType<typeof vi.fn>;
+    warn: ReturnType<typeof vi.fn>;
+    error: ReturnType<typeof vi.fn>;
+    setLogLevel: ReturnType<typeof vi.fn>;
+  };
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let processExitSpy: any;
+
+  beforeEach(async () => {
+    config = new Config();
+    config.set('project_defaults', { base: '/tmp' });
+    config.setProject('myproject', {
+      path: 'myproject',
+      ide: 'vscode',
+      events: { cwd: true, ide: true, claude: true },
+    });
+
+    mockLog = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      setLogLevel: vi.fn(),
+    };
+
+    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+
+    EventRegistry.clear();
+    await EventRegistry.initialize();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+    processExitSpy.mockRestore();
+    try {
+      config.deleteProject('myproject');
+      config.delete('project_defaults');
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  it('should parse project:events:worktree and log worktree name', async () => {
+    const cmd = createOpenCommand({ config, log: mockLog });
+
+    // This will fail to find the worktree (no git repo at /tmp/myproject),
+    // but we can verify the parsing happened by checking debug logs
+    try {
+      await cmd.parseAsync(['node', 'test', 'myproject:cwd:feat-x', '--dry-run']);
+    } catch {
+      // Expected - no real git repo
+    }
+
+    const debugCalls = mockLog.debug.mock.calls.map((c) => c[0]).join(' ');
+    expect(debugCalls).toContain('Worktree: feat-x');
+  });
+
+  it('should parse project::worktree as all events with worktree', async () => {
+    const cmd = createOpenCommand({ config, log: mockLog });
+
+    try {
+      await cmd.parseAsync(['node', 'test', 'myproject::feat-x', '--dry-run']);
+    } catch {
+      // Expected - no real git repo
+    }
+
+    const debugCalls = mockLog.debug.mock.calls.map((c) => c[0]).join(' ');
+    expect(debugCalls).toContain('Commands: all');
+    expect(debugCalls).toContain('Worktree: feat-x');
+  });
+
+  it('should treat trailing colon as no worktree', async () => {
+    const cmd = createOpenCommand({ config, log: mockLog });
+
+    await cmd.parseAsync(['node', 'test', 'myproject:cwd:', '--dry-run']);
+
+    const debugCalls = mockLog.debug.mock.calls.map((c) => c[0]).join(' ');
+    expect(debugCalls).not.toContain('Worktree:');
+  });
+
+  it('should handle extra colons gracefully', async () => {
+    const cmd = createOpenCommand({ config, log: mockLog });
+
+    await cmd.parseAsync(['node', 'test', 'myproject:::', '--dry-run']);
+
+    // Should be treated as all events, no worktree (empty segments)
+    const debugCalls = mockLog.debug.mock.calls.map((c) => c[0]).join(' ');
+    expect(debugCalls).toContain('Commands: all');
+    expect(debugCalls).not.toContain('Worktree:');
+  });
+
+  it('should show worktree syntax in project:help output', async () => {
+    const cmd = createOpenCommand({ config, log: mockLog });
+
+    await cmd.parseAsync(['node', 'test', 'myproject:help']);
+
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+    expect(output).toContain('my-worktree');
+  });
+
+  it('should attempt worktree lookup and fail for non-existent repos', async () => {
+    const cmd = createOpenCommand({ config, log: mockLog });
+
+    // Attempting to resolve a worktree on a non-git path will throw
+    await expect(
+      cmd.parseAsync(['node', 'test', 'myproject:cwd:nonexistent'])
+    ).rejects.toThrow();
+  });
+});
+
 describe('layout detection', () => {
   let config: Config;
   let mockLog: {
