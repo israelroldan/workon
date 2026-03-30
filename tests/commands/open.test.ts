@@ -23,6 +23,9 @@ vi.mock('../../src/lib/tmux.js', () => ({
 // Mock child_process to avoid actual spawns
 vi.mock('child_process', () => ({
   spawn: vi.fn(() => ({ unref: vi.fn() })),
+  exec: vi.fn((_cmd: string, cb: (err: null, result: { stdout: string; stderr: string }) => void) =>
+    cb(null, { stdout: '', stderr: '' })
+  ),
 }));
 
 describe('createOpenCommand', () => {

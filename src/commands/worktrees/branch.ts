@@ -18,6 +18,7 @@ interface WorktreesContext {
 interface BranchOptions {
   push?: boolean;
   force?: boolean;
+  yes?: boolean;
 }
 
 export function createBranchCommand(ctx: WorktreesContext): Command {
@@ -29,6 +30,7 @@ export function createBranchCommand(ctx: WorktreesContext): Command {
     .argument('<branch>', 'New branch name to create')
     .option('-p, --push', 'Push the branch to origin after creating')
     .option('-f, --force', 'Overwrite existing branch')
+    .option('-y, --yes', 'Skip all confirmation prompts (non-interactive mode)')
     .action(async (worktreeName: string, branchName: string, options: BranchOptions) => {
       const projectCtx = await resolveProjectFromCwd(config, log);
 
@@ -108,6 +110,8 @@ export function createBranchCommand(ctx: WorktreesContext): Command {
             pushSpinner.fail(`Failed to push: ${(error as Error).message}`);
             log.info(`You can push manually with: git push -u origin ${branchName}`);
           }
+        } else if (options.yes) {
+          log.info(`You can push manually with: git push -u origin ${branchName}`);
         } else {
           const shouldPush = await confirm({
             message: 'Push branch to origin for PR?',

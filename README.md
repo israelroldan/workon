@@ -288,6 +288,119 @@ eval "$(workon myproject --shell)"
 workon myproject --shell
 ```
 
+## For AI Agents
+
+All worktree commands support a `-y, --yes` flag that skips interactive prompts, making them safe to call from AI agents, scripts, and CI pipelines.
+
+### Non-Interactive Worktree Lifecycle
+
+```bash
+# Create a worktree (auto-defaults base branch to current)
+workon worktrees add feat-x -b main -y
+
+# Create and immediately open a session
+workon worktrees add feat-x -b main -y -o
+
+# Open an existing worktree session
+workon worktrees open feat-x -y
+
+# Create a branch from a worktree and push it
+workon worktrees branch feat-x my-branch -y -p
+
+# Merge, remove worktree, and delete the branch
+workon worktrees merge feat-x -i main -y --delete-branch
+
+# Force-remove a worktree with uncommitted changes
+workon worktrees remove feat-x -y -f
+```
+
+### Colon Syntax with Worktrees
+
+Run specific events in a worktree using the extended colon syntax:
+
+```bash
+# project:events:worktree-name
+workon myproject:cwd:feat-x           # cd into worktree
+workon myproject:claude:feat-x        # open Claude in worktree
+workon myproject:cwd,claude:feat-x    # specific events in worktree
+workon myproject::feat-x              # all events in worktree
+```
+
+### Non-Interactive Flags Reference
+
+| Command | Flag | Effect when set |
+|---------|------|-----------------|
+| `worktrees add` | `-y, --yes` | Skips registration prompt, auto-defaults base branch, skips "open session?" prompt |
+| `worktrees add` | `-b, --base <branch>` | Sets base branch (avoids branch selection prompt) |
+| `worktrees add` | `-o, --open` | Opens session after creation (avoids prompt) |
+| `worktrees add` | `--no-hook` | Skips post-setup hook |
+| `worktrees open` | `-y, --yes` | Skips registration prompt |
+| `worktrees branch` | `-y, --yes` | Skips "push to origin?" prompt (use `-p` to push) |
+| `worktrees branch` | `-p, --push` | Pushes branch (avoids prompt) |
+| `worktrees remove` | `-y, --yes` | Skips confirmation prompt |
+| `worktrees remove` | `-f, --force` | Force-removes with uncommitted changes |
+| `worktrees remove` | `--no-hook` | Skips pre-teardown hook |
+| `worktrees merge` | `-y, --yes` | Skips all confirmation prompts |
+| `worktrees merge` | `-i, --into <branch>` | Sets target branch (avoids selection prompt) |
+| `worktrees merge` | `-s, --squash` | Uses squash merge (avoids prompt) |
+| `worktrees merge` | `-k, --keep` | Keeps worktree after merge |
+| `worktrees merge` | `--delete-branch` | Deletes merged branch (avoids prompt) |
+| `worktree merge` | `-y, --yes` | Skips all confirmation prompts |
+| `worktree merge` | `--delete-branch` | Deletes merged branch (avoids prompt) |
+| `worktree remove` | `-y, --yes` | Skips confirmation prompt |
+| `worktree remove` | `-f, --force` | Force-removes with uncommitted changes |
+
+### Commands That Are Already Non-Interactive
+
+These commands produce output only and never prompt:
+
+- `workon worktrees list` / `workon worktrees list -a`
+- `workon worktree` / `workon worktree status`
+
+### Example: Automating a Feature Branch Workflow
+
+This is a typical developer workflow that can be fully automated by an AI agent using the non-interactive flags. Here's the manual version compared to the automated version:
+
+**Manual workflow (interactive):**
+
+```bash
+# 1. cd into the project
+workon my-project:cwd
+
+# 2. Create a worktree (prompts for base branch, open session, etc.)
+workon worktrees add my-feature
+
+# 3. Do your work...
+
+# 4. Push, create a PR, get it reviewed and merged
+
+# 5. Tear down the worktree
+workon worktrees remove my-feature
+```
+
+**Automated workflow (non-interactive, agent-friendly):**
+
+```bash
+# 1. cd into the project
+workon my-project:cwd
+
+# 2. Create a worktree and open a session — no prompts
+workon worktrees add my-feature -b main -y -o
+
+# 3. Agent does the work in the worktree...
+#    (or use colon syntax to target it directly)
+#    workon my-project:claude:my-feature
+
+# 4. Push, create a PR, get it reviewed and merged
+workon worktrees branch my-feature pr-branch -y -p
+# ... PR merged via gh/API ...
+
+# 5. Tear down: remove worktree and delete the branch
+workon worktrees remove my-feature -y
+```
+
+The key difference is that every step in the automated version completes without waiting for user input, making it safe to chain together in scripts or have an AI agent drive the entire flow.
+
 ## Advanced Usage
 
 ### Environment Detection

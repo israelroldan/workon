@@ -20,6 +20,7 @@ interface MergeOptions {
   squash?: boolean;
   keep?: boolean;
   yes?: boolean;
+  deleteBranch?: boolean;
 }
 
 export function createMergeCommand(ctx: WorktreesContext): Command {
@@ -32,6 +33,7 @@ export function createMergeCommand(ctx: WorktreesContext): Command {
     .option('-s, --squash', 'Use squash merge')
     .option('-k, --keep', 'Keep the worktree after merging')
     .option('-y, --yes', 'Skip confirmation prompts')
+    .option('--delete-branch', 'Delete the merged branch after merge')
     .action(async (name: string, options: MergeOptions) => {
       const projectCtx = await resolveProjectFromCwd(config, log);
 
@@ -171,22 +173,23 @@ export function createMergeCommand(ctx: WorktreesContext): Command {
         }
 
         // Optionally delete the branch
-        if (!options.yes) {
-          const shouldDeleteBranch = await confirm({
+        let shouldDeleteBranch = options.deleteBranch || false;
+        if (!shouldDeleteBranch && !options.yes) {
+          shouldDeleteBranch = await confirm({
             message: `Delete the merged branch '${worktree.branch}'?`,
             default: false,
           });
+        }
 
-          if (shouldDeleteBranch) {
-            const deleteSpinner = ora(`Deleting branch '${worktree.branch}'...`).start();
-            try {
-              const { simpleGit } = await import('simple-git');
-              const git = simpleGit(projectPath);
-              await git.deleteLocalBranch(worktree.branch, true);
-              deleteSpinner.succeed(`Branch '${worktree.branch}' deleted`);
-            } catch (error) {
-              deleteSpinner.warn(`Failed to delete branch: ${(error as Error).message}`);
-            }
+        if (shouldDeleteBranch) {
+          const deleteSpinner = ora(`Deleting branch '${worktree.branch}'...`).start();
+          try {
+            const { simpleGit } = await import('simple-git');
+            const git = simpleGit(projectPath);
+            await git.deleteLocalBranch(worktree.branch, true);
+            deleteSpinner.succeed(`Branch '${worktree.branch}' deleted`);
+          } catch (error) {
+            deleteSpinner.warn(`Failed to delete branch: ${(error as Error).message}`);
           }
         }
       }

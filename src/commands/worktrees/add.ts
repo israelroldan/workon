@@ -18,6 +18,7 @@ interface AddOptions {
   force?: boolean;
   open?: boolean;
   hook?: boolean; // Commander negated options: --no-hook sets hook=false
+  yes?: boolean;
 }
 
 export function createAddCommand(ctx: WorktreesContext): Command {
@@ -30,6 +31,7 @@ export function createAddCommand(ctx: WorktreesContext): Command {
     .option('-f, --force', 'Overwrite existing worktree')
     .option('-o, --open', 'Open the worktree after creation')
     .option('--no-hook', 'Skip running the post-setup hook')
+    .option('-y, --yes', 'Skip all confirmation prompts (non-interactive mode)')
     .action(async (branch: string, options: AddOptions) => {
       const projectCtx = await resolveProjectFromCwd(config, log);
 
@@ -45,11 +47,15 @@ export function createAddCommand(ctx: WorktreesContext): Command {
 
       // For full functionality (open session), we need registration
       if (!projectCtx.isRegistered) {
-        const result = await promptToRegisterProject(projectCtx.projectPath, config, log);
-        if (result) {
-          projectCtx.projectName = result.projectName;
-          projectCtx.projectConfig = result.projectConfig;
-          projectCtx.isRegistered = true;
+        if (options.yes) {
+          log.info('Project is not registered. Proceeding without registration.');
+        } else {
+          const result = await promptToRegisterProject(projectCtx.projectPath, config, log);
+          if (result) {
+            projectCtx.projectName = result.projectName;
+            projectCtx.projectConfig = result.projectConfig;
+            projectCtx.isRegistered = true;
+          }
         }
       }
 
@@ -61,17 +67,22 @@ export function createAddCommand(ctx: WorktreesContext): Command {
       let baseBranch = options.base;
 
       if (!branchExists && !baseBranch) {
-        const branches = await manager.getBranches();
-        const currentBranch = await manager.getCurrentBranch();
+        if (options.yes) {
+          baseBranch = await manager.getCurrentBranch();
+          log.info(`Branch '${branch}' doesn't exist. Creating from '${baseBranch}'.`);
+        } else {
+          const branches = await manager.getBranches();
+          const currentBranch = await manager.getCurrentBranch();
 
-        baseBranch = await select({
-          message: `Branch '${branch}' doesn't exist. Create from which branch?`,
-          choices: branches.map((b) => ({
-            name: b === currentBranch ? `${b} (current)` : b,
-            value: b,
-          })),
-          default: currentBranch,
-        });
+          baseBranch = await select({
+            message: `Branch '${branch}' doesn't exist. Create from which branch?`,
+            choices: branches.map((b) => ({
+              name: b === currentBranch ? `${b} (current)` : b,
+              value: b,
+            })),
+            default: currentBranch,
+          });
+        }
       }
 
       const spinner = ora(`Creating worktree for branch '${branch}'...`).start();
@@ -111,6 +122,8 @@ export function createAddCommand(ctx: WorktreesContext): Command {
         if (projectCtx.isRegistered && projectName) {
           if (options.open) {
             await openWorktreeSession(projectCtx, worktree.name, config, log);
+          } else if (options.yes) {
+            console.log(`\nTo open later: ${chalk.cyan(`workon worktrees open ${worktree.name}`)}`);
           } else {
             const shouldOpen = await confirm({
               message: 'Open workon session in this worktree?',

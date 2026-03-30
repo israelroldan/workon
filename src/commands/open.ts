@@ -11,6 +11,7 @@ import type {
 import { EnvironmentRecognizer, ProjectEnvironment } from '../lib/environment.js';
 import { TmuxManager } from '../lib/tmux.js';
 import { EventRegistry } from '../events/registry.js';
+import { WorktreeManager } from '../lib/worktree.js';
 
 interface OpenContext {
   config: Config;
@@ -74,11 +75,16 @@ async function processProject(
 ): Promise<void> {
   const { config, log } = ctx;
 
-  // Parse colon syntax: project:command1,command2
-  const [projectName, commandsString] = projectParam.split(':');
-  const requestedCommands = commandsString
-    ? commandsString.split(',').map((cmd) => cmd.trim())
-    : null;
+  // Parse colon syntax: project:command1,command2 or project:command1,command2:worktree
+  const parts = projectParam.split(':');
+  const projectName = parts[0];
+  const commandsString = parts[1] || null;
+  const worktreeName = parts[2] || null;
+
+  const requestedCommands =
+    commandsString && commandsString !== 'help'
+      ? commandsString.split(',').map((cmd) => cmd.trim())
+      : null;
 
   // Special case: project:help shows available commands
   if (commandsString === 'help') {
@@ -87,7 +93,8 @@ async function processProject(
   }
 
   log.debug(
-    `Project: ${projectName}, Commands: ${requestedCommands ? requestedCommands.join(', ') : 'all'}`
+    `Project: ${projectName}, Commands: ${requestedCommands ? requestedCommands.join(', ') : 'all'}` +
+      (worktreeName ? `, Worktree: ${worktreeName}` : '')
   );
 
   const projects = config.getProjects();
@@ -110,6 +117,29 @@ async function processProject(
     }
 
     const projectEnv = ProjectEnvironment.load(projectCfg, config.getDefaults());
+
+    // If a worktree was specified, override the project path to the worktree path
+    if (worktreeName) {
+      const projectPath = projectEnv.project.path.path;
+      const manager = new WorktreeManager(projectPath, projectName);
+      const worktree = await manager.get(worktreeName);
+
+      if (!worktree) {
+        log.error(`Worktree '${worktreeName}' not found for project '${projectName}'.`);
+        const worktrees = await manager.listManagedWorktrees();
+        if (worktrees.length > 0) {
+          log.info('Available worktrees:');
+          worktrees.forEach((wt) => log.info(`  - ${wt.name}`));
+        }
+        process.exit(1);
+      }
+
+      log.debug(`Using worktree path: ${worktree.path}`);
+      // Override the internal _path directly to bypass the setter which would join with base
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (projectEnv.project as any)._path = File.from(worktree.path).absolutify();
+    }
+
     await switchTo(projectEnv, requestedCommands, options, ctx);
   } else {
     log.error(`Project '${projectName}' not found.`);
@@ -503,5 +533,7 @@ async function showProjectHelp(projectName: string, ctx: OpenContext): Promise<v
     console.log(`  workon ${projectName}:${twoCommands.padEnd(12)} # Multiple commands`);
   }
 
-  console.log(`  workon ${projectName}:cwd --shell       # Output shell commands\n`);
+  console.log(`  workon ${projectName}:cwd --shell       # Output shell commands`);
+  console.log(`  workon ${projectName}:cwd:my-worktree   # Run in a worktree`);
+  console.log(`  workon ${projectName}::my-worktree      # All commands in a worktree\n`);
 }

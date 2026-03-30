@@ -19,6 +19,7 @@ interface OpenOptions {
   debug?: boolean;
   shell?: boolean;
   attach?: boolean; // Default true, set false to create session without attaching
+  yes?: boolean;
 }
 
 export function createOpenCommand(ctx: WorktreesContext): Command {
@@ -29,6 +30,7 @@ export function createOpenCommand(ctx: WorktreesContext): Command {
     .argument('<name>', 'Worktree name')
     .option('-d, --debug', 'Enable debug logging')
     .option('--shell', 'Output shell commands instead of spawning processes')
+    .option('-y, --yes', 'Skip all confirmation prompts (non-interactive mode)')
     .action(async (name: string, options: OpenOptions) => {
       if (options.debug) {
         log.setLogLevel('debug');
@@ -48,12 +50,16 @@ export function createOpenCommand(ctx: WorktreesContext): Command {
 
       // For full tmux layout, we need registration (for events config)
       if (!projectCtx.isRegistered) {
-        log.warn('Project is not registered. Opening with basic shell layout.');
-        const shouldRegister = await promptToRegisterProject(projectCtx.projectPath, config, log);
-        if (shouldRegister) {
-          projectCtx.projectName = shouldRegister.projectName;
-          projectCtx.projectConfig = shouldRegister.projectConfig;
-          projectCtx.isRegistered = true;
+        if (options.yes) {
+          log.info('Project is not registered. Opening with basic shell layout.');
+        } else {
+          log.warn('Project is not registered. Opening with basic shell layout.');
+          const shouldRegister = await promptToRegisterProject(projectCtx.projectPath, config, log);
+          if (shouldRegister) {
+            projectCtx.projectName = shouldRegister.projectName;
+            projectCtx.projectConfig = shouldRegister.projectConfig;
+            projectCtx.isRegistered = true;
+          }
         }
       }
 
