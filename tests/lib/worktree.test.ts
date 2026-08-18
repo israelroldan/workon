@@ -13,15 +13,12 @@ import { realpathSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { simpleGit, type SimpleGit } from 'simple-git';
-import { createHash } from 'crypto';
-import { basename } from 'path';
 import {
   WorktreeManager,
   isPathInside,
   deriveProjectIdentifier,
-  getWorktreesDirForProject,
+  getWorktreesRoot,
   normalizePath,
-  resolveProjectIdentifier,
 } from '../../src/lib/worktree.js';
 
 /**
@@ -197,6 +194,31 @@ describe('WorktreeManager', () => {
       });
     });
 
+    it('is not confused by a branch that collides with the flattened name', async () => {
+      // 'feature/login' and 'feature-login' both map to directory 'feature-login',
+      // so the directory name alone cannot tell them apart. What `add` recorded can.
+      const wt = await manager.add({ branch: 'feature/login' });
+      await git.raw(['branch', 'feature-login']);
+      await simpleGit(wt.path).checkoutLocalBranch('branch-b');
+
+      expect(await manager.getOriginalBranch('feature-login')).toEqual({
+        branch: 'feature/login',
+        exists: true,
+      });
+    });
+
+    it('falls back to the directory name for worktrees created before recording', async () => {
+      const wt = await manager.add({ branch: 'legacy-wt' });
+      // Simulate a worktree created by an earlier version: no recorded branch
+      await git.raw(['config', '--local', '--unset', 'workon.worktree.legacy-wt.branch']);
+      await simpleGit(wt.path).checkoutLocalBranch('branch-b');
+
+      expect(await manager.getOriginalBranch('legacy-wt')).toEqual({
+        branch: 'legacy-wt',
+        exists: true,
+      });
+    });
+
     it('returns null for an unknown worktree', async () => {
       expect(await manager.getOriginalBranch('nope')).toBeNull();
     });
@@ -346,6 +368,27 @@ describe('WorktreeManager', () => {
     });
   });
 
+  describe('isManaged', () => {
+    it('recognises a worktree created under a different project identifier', async () => {
+      // The identifier hashes the project path, and that path reaches us either
+      // from git (a realpath) or from config (possibly via a symlink). Managed
+      // detection must not depend on which one produced the directory.
+      const wt = await manager.add({ branch: 'feat-a' });
+      const strayId = join(getWorktreesRoot(), 'someproject-deadbeef');
+      const moved = join(strayId, 'feat-a');
+      mkdirSync(strayId, { recursive: true });
+      await git.raw(['worktree', 'move', wt.path, moved]);
+
+      const info = await manager.get('feat-a');
+      expect(info).not.toBeNull();
+      expect(info!.path).toBe(moved);
+      expect(manager.isManaged(info!)).toBe(true);
+      expect((await manager.listManagedWorktrees()).map((w) => w.name)).toContain('feat-a');
+
+      rmSync(strayId, { recursive: true, force: true });
+    });
+  });
+
   describe('listManagedWorktrees', () => {
     it('excludes worktrees created outside the managed directory', async () => {
       const external = join(realpathSync(tmpdir()), `workon-external-${Date.now()}`);
@@ -448,34 +491,5 @@ describe('WorktreeManager', () => {
       const wt = await manager.add({ branch: 'feat-a' });
       await expect(manager.runPostSetupHook(wt.path)).rejects.toThrow(/hook not found/);
     });
-  });
-});
-
-describe('resolveProjectIdentifier', () => {
-  it('keeps using a pre-normalization worktrees directory when one exists', async () => {
-    // Path normalization changed the hash for anyone whose project path runs
-    // through a symlink; their existing worktrees must stay reachable.
-    const real = realpathSync(mkdtempSync(join(tmpdir(), 'workon-legacy-')));
-    const link = join(sandbox, 'legacy-link');
-    symlinkSync(real, link);
-
-    try {
-      const legacyId = `${basename(link)}-${createHash('sha256')
-        .update(link)
-        .digest('hex')
-        .substring(0, 8)}`;
-      const normalizedId = deriveProjectIdentifier(link);
-      expect(legacyId).not.toBe(normalizedId);
-
-      // No directory on disk yet: the normalized identifier is used
-      expect(resolveProjectIdentifier(link)).toBe(normalizedId);
-
-      // Once worktrees exist under the old identifier, keep using it
-      mkdirSync(getWorktreesDirForProject(legacyId), { recursive: true });
-      expect(resolveProjectIdentifier(link)).toBe(legacyId);
-    } finally {
-      unlinkSync(link);
-      rmSync(real, { recursive: true, force: true });
-    }
   });
 });

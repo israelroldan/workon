@@ -1,12 +1,7 @@
 import File from 'phylo';
 import path from 'path';
 import { simpleGit } from 'simple-git';
-import {
-  getWorktreesDirForProject,
-  isPathInside,
-  normalizePath,
-  resolveProjectIdentifier,
-} from '../../lib/worktree.js';
+import { getWorktreesRoot, isPathInside, normalizePath } from '../../lib/worktree.js';
 import { select, checkbox, confirm, input } from '@inquirer/prompts';
 import type { Config } from '../../lib/config.js';
 import type { Logger, ProjectConfig, EventsConfig } from '../../types/index.js';
@@ -140,7 +135,7 @@ export async function detectWorktreeContext(
       worktreePath: worktreeRoot,
       mainRepoPath,
       // Must match the name WorktreeManager.get() expects
-      worktreeName: resolveWorktreeName(entries, mainRepoPath, worktreeRoot),
+      worktreeName: resolveWorktreeName(entries, worktreeRoot),
       branch,
     };
   } catch {
@@ -152,12 +147,7 @@ export async function detectWorktreeContext(
  * Find a worktree's name from a parsed `git worktree list`
  * Mirrors WorktreeManager.parseWorktreeList so both agree on naming.
  */
-function resolveWorktreeName(
-  entries: WorktreeListEntry[],
-  mainRepoPath: string,
-  worktreePath: string
-): string {
-  const projectWorktreesDir = getWorktreesDirForProject(resolveProjectIdentifier(mainRepoPath));
+function resolveWorktreeName(entries: WorktreeListEntry[], worktreePath: string): string {
   const entry = entries.find((e) => e.path === worktreePath);
 
   if (!entry) {
@@ -165,7 +155,7 @@ function resolveWorktreeName(
     return path.basename(worktreePath);
   }
 
-  if (isPathInside(entry.path, projectWorktreesDir)) {
+  if (isPathInside(entry.path, getWorktreesRoot())) {
     // Managed worktree under ~/.workon/worktrees/{project}/
     return path.basename(entry.path);
   }

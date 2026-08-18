@@ -312,6 +312,11 @@ async function mergeCurrentWorktree(
     mergeSpinner.succeed(`Successfully merged '${worktreeInfo.branch}' into '${targetBranch}'`);
     if (result.restored && result.previousBranch) {
       log.debug(`Main worktree restored to '${result.previousBranch}'`);
+    } else if (result.previousBranch && result.previousBranch !== targetBranch) {
+      log.warn(
+        `Merged, but could not switch the main worktree back to ` +
+          `'${result.previousBranch}'; it is left on '${targetBranch}'.`
+      );
     }
   } catch (error) {
     mergeSpinner.fail(`Merge failed: ${(error as Error).message}`);

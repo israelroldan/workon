@@ -59,7 +59,13 @@ const HOOK_MAX_BUFFER = 32 * 1024 * 1024;
 function resolveHookTimeout(): number {
   // 0 is Node's "no timeout", which is exactly what someone with a very long
   // hook would set - so accept it instead of falling through to the default.
-  const configured = Number(process.env.WORKON_HOOK_TIMEOUT);
+  // An empty or blank value is *not* 0: `export WORKON_HOOK_TIMEOUT=` should
+  // leave the safety net in place rather than quietly removing it.
+  const raw = process.env.WORKON_HOOK_TIMEOUT?.trim();
+  if (!raw) {
+    return 15 * 60 * 1000;
+  }
+  const configured = Number(raw);
   return Number.isFinite(configured) && configured >= 0 ? configured : 15 * 60 * 1000;
 }
 
@@ -140,41 +146,27 @@ export function deriveProjectIdentifier(projectPath: string): string {
 }
 
 /**
- * Get the worktrees directory for a project
+ * Root directory holding every project's worktrees.
+ *
+ * Whether a worktree is workon-managed is decided against this root rather than
+ * against one project's `{name}-{hash}` subdirectory. `git worktree list` only
+ * ever reports worktrees of the current repository, so anything of ours living
+ * anywhere under here is ours - which keeps recognition working regardless of
+ * which identifier a worktree was created under. That matters because the hash
+ * depends on the project path, and the path can reach us either from git (a
+ * realpath) or from config (possibly via a symlink).
  */
-export function getWorktreesDirForProject(projectIdentifier: string): string {
+export function getWorktreesRoot(): string {
   // homedir() is normalized because every path it gets compared against comes
   // back from git as a realpath.
-  return join(normalizePath(homedir()), WORKON_DIR, WORKTREES_SUBDIR, projectIdentifier);
+  return join(normalizePath(homedir()), WORKON_DIR, WORKTREES_SUBDIR);
 }
 
 /**
- * Identifier as it was derived before paths were realpath-normalized.
- * Only used to keep already-created worktrees reachable after an upgrade.
+ * Get the worktrees directory for a project - where new worktrees are created.
  */
-function legacyProjectIdentifier(projectPath: string): string {
-  return `${basename(projectPath)}-${shortHash(projectPath)}`;
-}
-
-/**
- * Resolve which identifier a project's worktrees actually live under.
- *
- * Normalizing paths changed the hash for anyone whose project path runs through
- * a symlink. Their existing `~/.workon/worktrees/{old-id}/` would otherwise stop
- * being recognised as managed, so keep using it when it is there.
- */
-export function resolveProjectIdentifier(projectPath: string): string {
-  const current = deriveProjectIdentifier(projectPath);
-  if (existsSync(getWorktreesDirForProject(current))) {
-    return current;
-  }
-
-  const legacy = legacyProjectIdentifier(projectPath);
-  if (legacy !== current && existsSync(getWorktreesDirForProject(legacy))) {
-    return legacy;
-  }
-
-  return current;
+export function getWorktreesDirForProject(projectIdentifier: string): string {
+  return join(getWorktreesRoot(), projectIdentifier);
 }
 
 export class WorktreeManager {
@@ -188,8 +180,7 @@ export class WorktreeManager {
     this.projectPath = normalizePath(projectPath);
     // Always use derived identifier for consistency between creation and detection
     // The project name parameter is kept for potential future use (e.g., display)
-    // Derived from the path as given, so a pre-normalization directory still resolves.
-    this.projectIdentifier = resolveProjectIdentifier(projectPath);
+    this.projectIdentifier = deriveProjectIdentifier(this.projectPath);
     this.git = simpleGit(this.projectPath);
   }
 
@@ -233,8 +224,7 @@ export class WorktreeManager {
    */
   async listManagedWorktrees(): Promise<WorktreeInfo[]> {
     const all = await this.list();
-    const worktreesDir = this.getWorktreesDir();
-    return all.filter((wt) => isPathInside(wt.path, worktreesDir));
+    return all.filter((wt) => this.isManaged(wt));
   }
 
   /**
@@ -314,6 +304,9 @@ export class WorktreeManager {
     if (!worktree) {
       throw new Error('Failed to create worktree');
     }
+
+    await this.rememberOriginalBranch(dirName, branch);
+
     return worktree;
   }
 
@@ -345,6 +338,46 @@ export class WorktreeManager {
     args.push(worktree.path);
 
     await this.git.raw(args);
+
+    await this.forgetOriginalBranch(basename(worktree.path));
+  }
+
+  /**
+   * Where a managed worktree's original branch is recorded.
+   *
+   * git splits `section.subsection.key` at the first and last dot, so a
+   * directory name containing dots (`release-1.2.3`) still round-trips.
+   */
+  private originalBranchKey(dirName: string): string {
+    return `workon.worktree.${dirName}.branch`;
+  }
+
+  /**
+   * Record which branch a worktree was created for.
+   *
+   * The directory name alone can't answer this: `branchToDir()` is lossy
+   * (`feature/login` and `feature-login` both become `feature-login`), so
+   * recovering the branch from it is guesswork whenever both exist. Failing to
+   * record is not fatal - resolution falls back to that guess.
+   */
+  private async rememberOriginalBranch(dirName: string, branch: string): Promise<void> {
+    try {
+      await this.git.addConfig(this.originalBranchKey(dirName), branch);
+    } catch {
+      // Recording is best-effort; the worktree itself is already created.
+    }
+  }
+
+  private async recallOriginalBranch(dirName: string): Promise<string | null> {
+    return gitProbe(this.git, ['config', '--local', '--get', this.originalBranchKey(dirName)]);
+  }
+
+  private async forgetOriginalBranch(dirName: string): Promise<void> {
+    try {
+      await this.git.raw(['config', '--local', '--unset', this.originalBranchKey(dirName)]);
+    } catch {
+      // Nothing recorded, or already gone.
+    }
   }
 
   /**
@@ -408,7 +441,7 @@ export class WorktreeManager {
    * Anything else was created by hand with `git worktree add` and is not ours.
    */
   isManaged(worktree: WorktreeInfo): boolean {
-    return isPathInside(worktree.path, this.getWorktreesDir());
+    return isPathInside(worktree.path, getWorktreesRoot());
   }
 
   /**
@@ -451,7 +484,16 @@ export class WorktreeManager {
     const dirName = basename(worktree.path);
     const branches = await this.getBranches();
 
-    // Exact match wins: 'feat-x' the branch beats 'feat/x' mapping to 'feat-x'.
+    // What `add` recorded, when it was this version of workon that created it.
+    const remembered = await this.recallOriginalBranch(dirName);
+    if (remembered) {
+      return { branch: remembered, exists: branches.includes(remembered) };
+    }
+
+    // Older worktrees have nothing recorded, so fall back to reversing the
+    // directory name. Exact match wins - a branch literally named after the
+    // directory is the likelier intent - but note this cannot distinguish
+    // 'feature-login' from 'feature/login' when both exist.
     if (branches.includes(dirName)) {
       return { branch: dirName, exists: true };
     }
@@ -584,7 +626,13 @@ export class WorktreeManager {
     }
 
     if (shouldRestore) {
-      await this.git.checkout(previousBranch);
+      try {
+        await this.git.checkout(previousBranch);
+      } catch {
+        // The merge landed. Failing to switch back is a lesser, separate
+        // problem, and throwing here would report the merge itself as failed.
+        return { previousBranch, restored: false };
+      }
     }
 
     return { previousBranch, restored: shouldRestore };
@@ -796,9 +844,8 @@ export class WorktreeManager {
 
       if (path) {
         // Calculate name from path
-        const worktreesDir = this.getWorktreesDir();
         let name: string;
-        if (isPathInside(path, worktreesDir)) {
+        if (isPathInside(path, getWorktreesRoot())) {
           // Managed worktree under ~/.workon/worktrees/{project}/
           name = basename(path);
         } else if (path === this.projectPath) {
