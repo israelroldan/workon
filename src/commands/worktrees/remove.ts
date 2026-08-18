@@ -64,6 +64,14 @@ export function createRemoveCommand(ctx: WorktreesContext): Command {
         process.exit(1);
       }
 
+      // `get()` matches by branch too, so a name can resolve to a worktree
+      // workon never created. Removing one deletes its directory, so say so.
+      const isManaged = manager.isManaged(worktree);
+      if (!isManaged) {
+        log.warn(`'${worktree.name}' is not managed by workon (${worktree.path}).`);
+        log.warn('Removing it will delete that directory.');
+      }
+
       // Check if worktree directory exists on disk
       const pathMissing = !existsSync(worktree.path);
       if (pathMissing) {
@@ -99,7 +107,9 @@ export function createRemoveCommand(ctx: WorktreesContext): Command {
       // Confirm removal
       if (!options.yes) {
         console.log(`\n${chalk.bold('Worktree to remove:')}`);
-        console.log(`  Name:   ${chalk.cyan(worktree.name)}`);
+        console.log(
+          `  Name:   ${chalk.cyan(worktree.name)}${isManaged ? '' : chalk.yellow(' (external)')}`
+        );
         console.log(`  Branch: ${chalk.green(worktree.branch)}`);
         console.log(`  Path:   ${chalk.gray(worktree.path)}`);
         console.log();

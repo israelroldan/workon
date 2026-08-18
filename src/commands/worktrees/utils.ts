@@ -1,7 +1,12 @@
 import File from 'phylo';
 import path from 'path';
 import { simpleGit } from 'simple-git';
-import { deriveProjectIdentifier, getWorktreesDirForProject } from '../../lib/worktree.js';
+import {
+  getWorktreesDirForProject,
+  isPathInside,
+  normalizePath,
+  resolveProjectIdentifier,
+} from '../../lib/worktree.js';
 import { select, checkbox, confirm, input } from '@inquirer/prompts';
 import type { Config } from '../../lib/config.js';
 import type { Logger, ProjectConfig, EventsConfig } from '../../types/index.js';
@@ -28,6 +33,46 @@ export interface ProjectContext {
   projectConfig: ProjectConfig | null;
   isRegistered: boolean;
   worktreeInfo: WorktreeInfo; // Info about worktree context
+}
+
+/**
+ * One entry of `git worktree list --porcelain`
+ */
+interface WorktreeListEntry {
+  path: string;
+  branch: string;
+}
+
+/**
+ * Parse `git worktree list --porcelain`. The first entry is always the main
+ * worktree (or the repository itself, for a bare repo).
+ */
+async function listWorktreeEntries(
+  git: ReturnType<typeof simpleGit>
+): Promise<WorktreeListEntry[]> {
+  const result = await git.raw(['worktree', 'list', '--porcelain']);
+  const entries: WorktreeListEntry[] = [];
+
+  for (const block of result.trim().split('\n\n')) {
+    if (!block.trim()) continue;
+
+    let wtPath = '';
+    let branch = '';
+    for (const line of block.split('\n')) {
+      if (line.startsWith('worktree ')) {
+        wtPath = line.substring('worktree '.length);
+      } else if (line.startsWith('branch ')) {
+        branch = line.substring('branch refs/heads/'.length);
+      } else if (line === 'detached') {
+        branch = '(detached)';
+      }
+    }
+    if (wtPath) {
+      entries.push({ path: wtPath, branch });
+    }
+  }
+
+  return entries;
 }
 
 /**
@@ -59,101 +104,76 @@ export async function detectWorktreeContext(
     // If git-dir and git-common-dir are different, we're in a worktree
     const isWorktree = normalizedGitDir !== normalizedCommonDir;
 
-    if (isWorktree) {
-      // We're in a worktree - find the main repo path
-      // The common dir is inside the main repo's .git folder
-      const mainRepoPath = path.dirname(normalizedCommonDir);
+    // The first entry of `git worktree list` is authoritative for the main
+    // worktree. Deriving it as dirname(--git-common-dir) is wrong for bare
+    // repositories, where the common dir is the repo itself rather than
+    // `<main>/.git`, and would hand back the repo's parent directory.
+    const entries = await listWorktreeEntries(git);
+    const mainRepoPath =
+      entries[0]?.path ??
+      (path.basename(normalizedCommonDir) === '.git'
+        ? path.dirname(normalizedCommonDir)
+        : normalizedCommonDir);
 
-      // Get current branch
-      let branch: string | null = null;
-      try {
-        branch = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
-        if (branch === 'HEAD') branch = '(detached)';
-      } catch {
-        branch = '(detached)';
-      }
-
-      // Find the worktree name by querying git worktree list from main repo
-      // This ensures we get the correct name that WorktreeManager.get() expects
-      const worktreeName = await findWorktreeNameByPath(mainRepoPath, worktreeRoot);
-
-      return {
-        isWorktree: true,
-        worktreePath: worktreeRoot,
-        mainRepoPath,
-        worktreeName,
-        branch,
-      };
-    } else {
+    if (!isWorktree) {
       // We're in the main repository
       return {
         isWorktree: false,
         worktreePath: null,
-        mainRepoPath: worktreeRoot,
+        mainRepoPath,
         worktreeName: null,
         branch: null,
       };
     }
+
+    // Get current branch
+    let branch: string | null = null;
+    try {
+      branch = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+      if (branch === 'HEAD') branch = '(detached)';
+    } catch {
+      branch = '(detached)';
+    }
+
+    return {
+      isWorktree: true,
+      worktreePath: worktreeRoot,
+      mainRepoPath,
+      // Must match the name WorktreeManager.get() expects
+      worktreeName: resolveWorktreeName(entries, mainRepoPath, worktreeRoot),
+      branch,
+    };
   } catch {
     return null;
   }
 }
 
 /**
- * Find a worktree's name by its path by querying git worktree list
- * Returns the name that WorktreeManager uses (branch-derived for external worktrees)
+ * Find a worktree's name from a parsed `git worktree list`
+ * Mirrors WorktreeManager.parseWorktreeList so both agree on naming.
  */
-async function findWorktreeNameByPath(
+function resolveWorktreeName(
+  entries: WorktreeListEntry[],
   mainRepoPath: string,
   worktreePath: string
-): Promise<string | null> {
-  try {
-    const git = simpleGit(mainRepoPath);
-    const result = await git.raw(['worktree', 'list', '--porcelain']);
+): string {
+  const projectWorktreesDir = getWorktreesDirForProject(resolveProjectIdentifier(mainRepoPath));
+  const entry = entries.find((e) => e.path === worktreePath);
 
-    const blocks = result.trim().split('\n\n');
-    // Project-specific worktrees directory: ~/.workon/worktrees/{project-identifier}/
-    // Use derived identifier since we don't know if the project is registered
-    const projectIdentifier = deriveProjectIdentifier(mainRepoPath);
-    const projectWorktreesDir = getWorktreesDirForProject(projectIdentifier);
-
-    for (const block of blocks) {
-      if (!block.trim()) continue;
-
-      const lines = block.split('\n');
-      let wtPath = '';
-      let branch = '';
-
-      for (const line of lines) {
-        if (line.startsWith('worktree ')) {
-          wtPath = line.substring('worktree '.length);
-        } else if (line.startsWith('branch ')) {
-          branch = line.substring('branch refs/heads/'.length);
-        } else if (line === 'detached') {
-          branch = '(detached)';
-        }
-      }
-
-      // Check if this is the worktree we're looking for
-      if (wtPath === worktreePath) {
-        // Use the same naming logic as WorktreeManager.parseWorktreeList
-        if (wtPath.startsWith(projectWorktreesDir)) {
-          // Managed worktree under ~/.workon/worktrees/{project}/
-          return path.basename(wtPath);
-        } else {
-          // External worktree - use branch name converted to dir format, or basename
-          return branch && branch !== '(detached)'
-            ? branch.replace(/\//g, '-')
-            : path.basename(wtPath);
-        }
-      }
-    }
-
-    // Fallback to basename if not found (shouldn't happen)
-    return path.basename(worktreePath);
-  } catch {
+  if (!entry) {
+    // Shouldn't happen: git listed us as a worktree of this repo.
     return path.basename(worktreePath);
   }
+
+  if (isPathInside(entry.path, projectWorktreesDir)) {
+    // Managed worktree under ~/.workon/worktrees/{project}/
+    return path.basename(entry.path);
+  }
+
+  // External worktree - use branch name converted to dir format, or basename
+  return entry.branch && entry.branch !== '(detached)'
+    ? entry.branch.replace(/\//g, '-')
+    : path.basename(entry.path);
 }
 
 /**
@@ -201,8 +221,10 @@ export async function resolveProjectFromCwd(
       configuredPath = configPath.absolutify().path;
     }
 
-    // Compare paths
-    if (configuredPath === projectPath) {
+    // Compare paths. projectPath comes from git as a realpath, so the
+    // configured one has to be resolved too or a symlinked base directory
+    // (e.g. ~/code pointing at another volume) never matches.
+    if (normalizePath(configuredPath) === projectPath) {
       log.debug(`Found registered project '${name}' at ${projectPath}`);
       return {
         projectPath,

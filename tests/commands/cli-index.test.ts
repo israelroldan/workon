@@ -22,6 +22,11 @@ vi.mock('../../src/lib/tmux.js', () => ({
 // Mock child_process
 vi.mock('child_process', () => ({
   spawn: vi.fn(() => ({ unref: vi.fn() })),
+  execFile: vi.fn((file, args, opts, callback) => {
+    const cb = [args, opts, callback].find((c) => typeof c === 'function');
+    if (cb) cb(null, '', '');
+    return { stdout: '', stderr: '' };
+  }),
   exec: vi.fn((cmd, opts, callback) => {
     // Handle both 2-arg and 3-arg versions
     const cb = typeof opts === 'function' ? opts : callback;

@@ -1,10 +1,11 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import path from 'path';
+import { existsSync } from 'fs';
 import type { Config } from '../../lib/config.js';
 import type { Logger, Project } from '../../types/index.js';
 import { WorktreeManager } from '../../lib/worktree.js';
-import { TmuxManager } from '../../lib/tmux.js';
+import { TmuxManager, sessionTarget, paneTarget } from '../../lib/tmux.js';
 import { resolveProjectFromCwd, promptToRegisterProject, type ProjectContext } from './utils.js';
 import { blockIfInWorktree } from './index.js';
 import { Project as ProjectClass } from '../../lib/project.js';
@@ -19,6 +20,7 @@ interface OpenOptions {
   shell?: boolean;
   attach?: boolean; // Default true, set false to create session without attaching
   yes?: boolean;
+  recreate?: boolean; // Tear down and rebuild an existing session
 }
 
 export function createOpenCommand(ctx: WorktreesContext): Command {
@@ -30,6 +32,7 @@ export function createOpenCommand(ctx: WorktreesContext): Command {
     .option('-d, --debug', 'Enable debug logging')
     .option('--shell', 'Output shell commands instead of spawning processes')
     .option('-y, --yes', 'Skip all confirmation prompts (non-interactive mode)')
+    .option('-r, --recreate', 'Rebuild the tmux session even if one already exists')
     .action(async (name: string, options: OpenOptions) => {
       if (options.debug) {
         log.setLogLevel('debug');
@@ -89,6 +92,12 @@ export async function runWorktreeOpen(
     process.exit(1);
   }
 
+  if (!existsSync(worktree.path)) {
+    log.error(`Worktree directory is missing from disk: ${worktree.path}`);
+    log.info(`Clean up the stale entry with: workon worktrees remove ${worktreeName}`);
+    process.exit(1);
+  }
+
   const defaults = config.getDefaults();
   const tmux = new TmuxManager();
   const sessionName = tmux.getWorktreeSessionName(displayName, worktreeName);
@@ -121,22 +130,30 @@ export async function runWorktreeOpen(
       project,
       worktree.path,
       sessionName,
-      tmux,
-      { hasClaudeEvent, hasNpmEvent }
+      { hasClaudeEvent, hasNpmEvent },
+      options.recreate === true
     );
     console.log(shellCommands.join('\n'));
   } else {
     if (await tmux.isTmuxAvailable()) {
       try {
-        await createWorktreeTmuxSession(project, worktree.path, sessionName, tmux, {
-          hasClaudeEvent,
-          hasNpmEvent,
-        });
+        const reused = await createWorktreeTmuxSession(
+          project,
+          worktree.path,
+          sessionName,
+          tmux,
+          { hasClaudeEvent, hasNpmEvent },
+          options.recreate === true
+        );
 
         if (shouldAttach) {
           await tmux.attachToSession(sessionName);
           console.log(
-            chalk.green(`Opened worktree '${worktreeName}' in tmux session '${sessionName}'`)
+            chalk.green(
+              reused
+                ? `Attached to existing tmux session '${sessionName}' (use --recreate to rebuild it)`
+                : `Opened worktree '${worktreeName}' in tmux session '${sessionName}'`
+            )
           );
         } else {
           // Session created but not attached - return session info for caller to handle
@@ -144,7 +161,7 @@ export async function runWorktreeOpen(
             chalk.green(`\nCreated tmux session '${sessionName}' for worktree '${worktreeName}'`)
           );
           console.log(`\nTo attach to this session, run:`);
-          console.log(chalk.cyan(`  tmux attach -t '${sessionName}'`));
+          console.log(chalk.cyan(`  tmux attach -t '${sessionTarget(sessionName)}'`));
         }
       } catch (error) {
         log.error(`Failed to create tmux session: ${(error as Error).message}`);
@@ -162,8 +179,8 @@ async function buildWorktreeShellCommands(
   project: Project | null,
   worktreePath: string,
   sessionName: string,
-  tmux: TmuxManager,
-  eventFlags: { hasClaudeEvent: boolean; hasNpmEvent: boolean }
+  eventFlags: { hasClaudeEvent: boolean; hasNpmEvent: boolean },
+  recreate: boolean
 ): Promise<string[]> {
   const { hasClaudeEvent, hasNpmEvent } = eventFlags;
 
@@ -172,29 +189,59 @@ async function buildWorktreeShellCommands(
   const npmCommand = hasNpmEvent && project ? await getNpmCommand(project) : '';
 
   // Build tmux commands using a custom session name
+  let create: string[];
   if (hasClaudeEvent && hasNpmEvent && project) {
-    return buildThreePaneCommands(sessionName, worktreePath, claudeArgs, npmCommand, tmux);
+    create = buildThreePaneCommands(sessionName, worktreePath, claudeArgs, npmCommand);
   } else if (hasClaudeEvent && project) {
-    return buildSplitClaudeCommands(sessionName, worktreePath, claudeArgs, tmux);
+    create = buildSplitClaudeCommands(sessionName, worktreePath, claudeArgs);
   } else if (hasNpmEvent && project) {
-    return buildTwoPaneNpmCommands(sessionName, worktreePath, npmCommand, tmux);
+    create = buildTwoPaneNpmCommands(sessionName, worktreePath, npmCommand);
   } else {
     // Just open a shell in the worktree
-    return buildSimpleSessionCommands(sessionName, worktreePath, tmux);
+    create = buildSimpleSessionCommands(sessionName, worktreePath);
   }
+
+  const target = sessionTarget(sessionName);
+  const commands = [`# workon worktree session: ${sessionName}`];
+
+  if (recreate) {
+    commands.push(
+      `if tmux has-session -t '${target}' 2>/dev/null; then`,
+      `  tmux kill-session -t '${target}'`,
+      `fi`
+    );
+  }
+
+  // Reuse a live session rather than tearing it down - it may have an editor or
+  // a long-running agent in it that the user did not ask to lose.
+  commands.push(`if ! tmux has-session -t '${target}' 2>/dev/null; then`);
+  commands.push(...create.map((cmd) => `  ${cmd}`));
+  commands.push(`fi`);
+  commands.push(getAttachCommand(sessionName));
+
+  return commands;
 }
 
+/**
+ * Create the tmux session for a worktree.
+ * Returns true when an existing session was reused instead of rebuilt.
+ */
 async function createWorktreeTmuxSession(
   project: Project | null,
   worktreePath: string,
   sessionName: string,
   tmux: TmuxManager,
-  eventFlags: { hasClaudeEvent: boolean; hasNpmEvent: boolean }
-): Promise<void> {
+  eventFlags: { hasClaudeEvent: boolean; hasNpmEvent: boolean },
+  recreate: boolean
+): Promise<boolean> {
   const { hasClaudeEvent, hasNpmEvent } = eventFlags;
 
-  // Kill existing session if it exists
-  if (await tmux.sessionExists(sessionName)) {
+  const exists = await tmux.sessionExists(sessionName);
+  if (exists) {
+    if (!recreate) {
+      // Reuse it: rebuilding would kill whatever is running in there.
+      return true;
+    }
     await tmux.killSession(sessionName);
   }
 
@@ -202,16 +249,24 @@ async function createWorktreeTmuxSession(
   const claudeArgs = hasClaudeEvent && project ? getClaudeArgs(project) : [];
   const npmCommand = hasNpmEvent && project ? await getNpmCommand(project) : '';
 
-  // Create appropriate session based on events
-  if (hasClaudeEvent && hasNpmEvent && project) {
-    await createThreePaneSession(sessionName, worktreePath, claudeArgs, npmCommand);
-  } else if (hasClaudeEvent && project) {
-    await createSplitClaudeSession(sessionName, worktreePath, claudeArgs);
-  } else if (hasNpmEvent && project) {
-    await createTwoPaneNpmSession(sessionName, worktreePath, npmCommand);
-  } else {
-    await createSimpleSession(sessionName, worktreePath);
+  try {
+    // Create appropriate session based on events
+    if (hasClaudeEvent && hasNpmEvent && project) {
+      await createThreePaneSession(sessionName, worktreePath, claudeArgs, npmCommand);
+    } else if (hasClaudeEvent && project) {
+      await createSplitClaudeSession(sessionName, worktreePath, claudeArgs);
+    } else if (hasNpmEvent && project) {
+      await createTwoPaneNpmSession(sessionName, worktreePath, npmCommand);
+    } else {
+      await createSimpleSession(sessionName, worktreePath);
+    }
+  } catch (error) {
+    // Don't leave a half-built session behind for the next run to reuse.
+    await tmux.killSession(sessionName);
+    throw error;
   }
+
+  return false;
 }
 
 function getClaudeArgs(project: Project): string[] {
@@ -234,27 +289,17 @@ function wrapWithShellFallback(command: string): string {
   return `${command}; exec $SHELL`;
 }
 
-function buildSimpleSessionCommands(
-  sessionName: string,
-  path: string,
-  _tmux: TmuxManager
-): string[] {
+function buildSimpleSessionCommands(sessionName: string, path: string): string[] {
   const escapedSession = escapeForSingleQuotes(sessionName);
   const escapedPath = escapeForSingleQuotes(path);
 
-  return [
-    `# Create tmux session for worktree`,
-    `tmux has-session -t '${escapedSession}' 2>/dev/null && tmux kill-session -t '${escapedSession}'`,
-    `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}'`,
-    getAttachCommand(sessionName),
-  ];
+  return [`tmux new-session -d -s '${escapedSession}' -c '${escapedPath}'`];
 }
 
 function buildSplitClaudeCommands(
   sessionName: string,
   path: string,
-  claudeArgs: string[],
-  _tmux: TmuxManager
+  claudeArgs: string[]
 ): string[] {
   const escapedSession = escapeForSingleQuotes(sessionName);
   const escapedPath = escapeForSingleQuotes(path);
@@ -262,32 +307,21 @@ function buildSplitClaudeCommands(
   const wrappedClaudeCmd = escapeForSingleQuotes(wrapWithShellFallback(claudeCommand));
 
   return [
-    `# Create tmux split session for worktree`,
-    `tmux has-session -t '${escapedSession}' 2>/dev/null && tmux kill-session -t '${escapedSession}'`,
     `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${wrappedClaudeCmd}'`,
-    `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}'`,
-    `tmux select-pane -t '${escapedSession}:0.0'`,
-    getAttachCommand(sessionName),
+    `tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}'`,
+    `tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`,
   ];
 }
 
-function buildTwoPaneNpmCommands(
-  sessionName: string,
-  path: string,
-  npmCommand: string,
-  _tmux: TmuxManager
-): string[] {
+function buildTwoPaneNpmCommands(sessionName: string, path: string, npmCommand: string): string[] {
   const escapedSession = escapeForSingleQuotes(sessionName);
   const escapedPath = escapeForSingleQuotes(path);
   const wrappedNpmCmd = escapeForSingleQuotes(wrapWithShellFallback(npmCommand));
 
   return [
-    `# Create tmux two-pane session with npm for worktree`,
-    `tmux has-session -t '${escapedSession}' 2>/dev/null && tmux kill-session -t '${escapedSession}'`,
     `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}'`,
-    `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}' '${wrappedNpmCmd}'`,
-    `tmux select-pane -t '${escapedSession}:0.0'`,
-    getAttachCommand(sessionName),
+    `tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}' '${wrappedNpmCmd}'`,
+    `tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`,
   ];
 }
 
@@ -295,8 +329,7 @@ function buildThreePaneCommands(
   sessionName: string,
   path: string,
   claudeArgs: string[],
-  npmCommand: string,
-  _tmux: TmuxManager
+  npmCommand: string
 ): string[] {
   const escapedSession = escapeForSingleQuotes(sessionName);
   const escapedPath = escapeForSingleQuotes(path);
@@ -305,22 +338,19 @@ function buildThreePaneCommands(
   const wrappedNpmCmd = escapeForSingleQuotes(wrapWithShellFallback(npmCommand));
 
   return [
-    `# Create tmux three-pane session for worktree`,
-    `tmux has-session -t '${escapedSession}' 2>/dev/null && tmux kill-session -t '${escapedSession}'`,
     `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${wrappedClaudeCmd}'`,
-    `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}'`,
-    `tmux split-window -v -t '${escapedSession}:0.1' -c '${escapedPath}' '${wrappedNpmCmd}'`,
-    `tmux resize-pane -t '${escapedSession}:0.2' -y 10`,
-    `tmux select-pane -t '${escapedSession}:0.0'`,
-    getAttachCommand(sessionName),
+    `tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}'`,
+    `tmux split-window -v -t '${paneTarget(sessionName, '0.1')}' -c '${escapedPath}' '${wrappedNpmCmd}'`,
+    `tmux resize-pane -t '${paneTarget(sessionName, '0.2')}' -y 10`,
+    `tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`,
   ];
 }
 
 function getAttachCommand(sessionName: string): string {
-  const escapedSession = escapeForSingleQuotes(sessionName);
+  const target = sessionTarget(sessionName);
 
   if (process.env.TMUX) {
-    return `tmux switch-client -t '${escapedSession}'`;
+    return `tmux switch-client -t '${target}'`;
   }
 
   const isITerm =
@@ -330,9 +360,9 @@ function getAttachCommand(sessionName: string): string {
   const useiTermIntegration = isITerm && !process.env.TMUX_CC_NOT_SUPPORTED;
 
   if (useiTermIntegration) {
-    return `tmux -CC attach-session -t '${escapedSession}'`;
+    return `tmux -CC attach-session -t '${target}'`;
   }
-  return `tmux attach-session -t '${escapedSession}'`;
+  return `tmux attach-session -t '${target}'`;
 }
 
 // Direct session creation functions using exec
@@ -361,8 +391,8 @@ async function createSplitClaudeSession(
   await exec(
     `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${wrappedClaudeCmd}'`
   );
-  await exec(`tmux split-window -h -t '${escapedSession}' -c '${escapedPath}'`);
-  await exec(`tmux select-pane -t '${escapedSession}:0.0'`);
+  await exec(`tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}'`);
+  await exec(`tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`);
 }
 
 async function createTwoPaneNpmSession(
@@ -375,8 +405,10 @@ async function createTwoPaneNpmSession(
   const wrappedNpmCmd = escapeForSingleQuotes(wrapWithShellFallback(npmCommand));
 
   await exec(`tmux new-session -d -s '${escapedSession}' -c '${escapedPath}'`);
-  await exec(`tmux split-window -h -t '${escapedSession}' -c '${escapedPath}' '${wrappedNpmCmd}'`);
-  await exec(`tmux select-pane -t '${escapedSession}:0.0'`);
+  await exec(
+    `tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}' '${wrappedNpmCmd}'`
+  );
+  await exec(`tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`);
 }
 
 async function createThreePaneSession(
@@ -394,10 +426,10 @@ async function createThreePaneSession(
   await exec(
     `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${wrappedClaudeCmd}'`
   );
-  await exec(`tmux split-window -h -t '${escapedSession}' -c '${escapedPath}'`);
+  await exec(`tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}'`);
   await exec(
-    `tmux split-window -v -t '${escapedSession}:0.1' -c '${escapedPath}' '${wrappedNpmCmd}'`
+    `tmux split-window -v -t '${paneTarget(sessionName, '0.1')}' -c '${escapedPath}' '${wrappedNpmCmd}'`
   );
-  await exec(`tmux resize-pane -t '${escapedSession}:0.2' -y 10`);
-  await exec(`tmux select-pane -t '${escapedSession}:0.0'`);
+  await exec(`tmux resize-pane -t '${paneTarget(sessionName, '0.2')}' -y 10`);
+  await exec(`tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`);
 }

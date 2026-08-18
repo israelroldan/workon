@@ -37,6 +37,11 @@ vi.mock('child_process', () => ({
       }
     }),
   })),
+  execFile: vi.fn((file, args, opts, callback) => {
+    const cb = [args, opts, callback].find((c) => typeof c === 'function');
+    if (cb) cb(null, '', '');
+    return { stdout: '', stderr: '' };
+  }),
   exec: vi.fn((cmd, opts, callback) => {
     const cb = typeof opts === 'function' ? opts : callback;
     if (cb) cb(null, '', '');

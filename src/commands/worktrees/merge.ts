@@ -146,14 +146,17 @@ export function createMergeCommand(ctx: WorktreesContext): Command {
       const mergeSpinner = ora(`Merging '${worktree.branch}' into '${targetBranch}'...`).start();
 
       try {
-        await manager.merge(name, {
+        const result = await manager.merge(name, {
           targetBranch,
           squash: squash || false,
         });
         mergeSpinner.succeed(`Successfully merged '${worktree.branch}' into '${targetBranch}'`);
+        if (result.restored && result.previousBranch) {
+          log.info(`Main worktree left on '${result.previousBranch}', as it was before the merge.`);
+        }
       } catch (error) {
         mergeSpinner.fail(`Merge failed: ${(error as Error).message}`);
-        log.info('You may need to resolve conflicts manually.');
+        log.info('Nothing was merged or removed; the worktree and its branch are untouched.');
         process.exit(1);
       }
 

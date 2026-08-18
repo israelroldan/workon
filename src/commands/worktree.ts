@@ -1,17 +1,78 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
+import path from 'path';
+import { existsSync } from 'fs';
 import { select, confirm } from '@inquirer/prompts';
 import { simpleGit } from 'simple-git';
 import type { Config } from '../lib/config.js';
 import type { Logger } from '../types/index.js';
-import { WorktreeManager } from '../lib/worktree.js';
+import { WorktreeManager, gitProbe, type WorktreeBranchInfo } from '../lib/worktree.js';
 import { TmuxManager } from '../lib/tmux.js';
-import { detectWorktreeContext, type WorktreeInfo } from './worktrees/utils.js';
+import { resolveProjectFromCwd, type WorktreeInfo } from './worktrees/utils.js';
 
 interface WorktreeContext {
   config: Config;
   log: Logger;
+}
+
+interface ResolvedWorktree {
+  info: WorktreeInfo & { worktreePath: string; worktreeName: string };
+  /** Name used to build the tmux session; must match `workon worktrees open` */
+  displayName: string;
+}
+
+/**
+ * Resolve the worktree we're standing in, or exit with a useful message.
+ *
+ * Goes through resolveProjectFromCwd rather than detectWorktreeContext so we
+ * pick up the *registered* project name: `workon worktrees open` derives tmux
+ * session names from it, and deriving them from the directory basename here
+ * meant we killed a session that didn't exist while the real one lived on.
+ */
+async function requireWorktree(ctx: WorktreeContext, hint?: string): Promise<ResolvedWorktree> {
+  const { config, log } = ctx;
+  const projectCtx = await resolveProjectFromCwd(config, log);
+
+  if (!projectCtx) {
+    log.error('Not in a git repository.');
+    process.exit(1);
+  }
+
+  const info = projectCtx.worktreeInfo;
+
+  if (!info.isWorktree) {
+    log.error("You're in the main repository, not a worktree.");
+    if (hint) {
+      log.info(hint);
+    }
+    process.exit(1);
+  }
+
+  if (!info.worktreePath || !info.worktreeName) {
+    log.error('Unable to determine worktree info.');
+    process.exit(1);
+  }
+
+  if (!existsSync(info.worktreePath)) {
+    log.error(`Worktree directory is missing from disk: ${info.worktreePath}`);
+    process.exit(1);
+  }
+
+  return {
+    info: info as ResolvedWorktree['info'],
+    displayName: projectCtx.projectName || path.basename(info.mainRepoPath),
+  };
+}
+
+/**
+ * Uncommitted-changes check that talks to the worktree directly.
+ * WorktreeManager.hasUncommittedChanges throws when the name can't be resolved,
+ * which surfaced as an unhandled rejection from inside a worktree.
+ */
+async function worktreeHasChanges(worktreePath: string): Promise<boolean> {
+  const status = await simpleGit(worktreePath).status();
+  return !status.isClean();
 }
 
 /**
@@ -26,20 +87,11 @@ export function createWorktreeCommand(ctx: WorktreeContext): Command {
 
   // Default action: show worktree status
   command.action(async () => {
-    const worktreeInfo = await detectWorktreeContext();
-
-    if (!worktreeInfo) {
-      log.error('Not in a git repository.');
-      process.exit(1);
-    }
-
-    if (!worktreeInfo.isWorktree) {
-      log.error("You're in the main repository, not a worktree.");
-      log.info(`Use 'workon worktrees' to manage worktrees for this project.`);
-      process.exit(1);
-    }
-
-    await showWorktreeStatus(worktreeInfo, log);
+    const { info } = await requireWorktree(
+      ctx,
+      `Use 'workon worktrees' to manage worktrees for this project.`
+    );
+    await showWorktreeStatus(info, log);
   });
 
   // Subcommand: status
@@ -47,19 +99,8 @@ export function createWorktreeCommand(ctx: WorktreeContext): Command {
     .command('status')
     .description('Show status of the current worktree')
     .action(async () => {
-      const worktreeInfo = await detectWorktreeContext();
-
-      if (!worktreeInfo) {
-        log.error('Not in a git repository.');
-        process.exit(1);
-      }
-
-      if (!worktreeInfo.isWorktree) {
-        log.error("You're in the main repository, not a worktree.");
-        process.exit(1);
-      }
-
-      await showWorktreeStatus(worktreeInfo, log);
+      const { info } = await requireWorktree(ctx);
+      await showWorktreeStatus(info, log);
     });
 
   // Subcommand: merge
@@ -79,20 +120,11 @@ export function createWorktreeCommand(ctx: WorktreeContext): Command {
         yes?: boolean;
         deleteBranch?: boolean;
       }) => {
-        const worktreeInfo = await detectWorktreeContext();
-
-        if (!worktreeInfo) {
-          log.error('Not in a git repository.');
-          process.exit(1);
-        }
-
-        if (!worktreeInfo.isWorktree) {
-          log.error("You're in the main repository, not a worktree.");
-          log.info(`Use 'workon worktrees merge <name>' from the main repository.`);
-          process.exit(1);
-        }
-
-        await mergeCurrentWorktree(worktreeInfo, options, ctx);
+        const resolved = await requireWorktree(
+          ctx,
+          `Use 'workon worktrees merge <name>' from the main repository.`
+        );
+        await mergeCurrentWorktree(resolved, options, ctx);
       }
     );
 
@@ -103,20 +135,11 @@ export function createWorktreeCommand(ctx: WorktreeContext): Command {
     .option('-f, --force', 'Force removal even with uncommitted changes')
     .option('-y, --yes', 'Skip confirmation prompt')
     .action(async (options: { force?: boolean; yes?: boolean }) => {
-      const worktreeInfo = await detectWorktreeContext();
-
-      if (!worktreeInfo) {
-        log.error('Not in a git repository.');
-        process.exit(1);
-      }
-
-      if (!worktreeInfo.isWorktree) {
-        log.error("You're in the main repository, not a worktree.");
-        log.info(`Use 'workon worktrees remove <name>' from the main repository.`);
-        process.exit(1);
-      }
-
-      await removeCurrentWorktree(worktreeInfo, options, ctx);
+      const resolved = await requireWorktree(
+        ctx,
+        `Use 'workon worktrees remove <name>' from the main repository.`
+      );
+      await removeCurrentWorktree(resolved, options, ctx);
     });
 
   // Subcommand: recycle
@@ -128,19 +151,8 @@ export function createWorktreeCommand(ctx: WorktreeContext): Command {
     .argument('[branch]', 'Remote branch to fast-forward to (auto-detects default)')
     .option('-y, --yes', 'Skip confirmation prompt')
     .action(async (branch: string | undefined, options: { yes?: boolean }) => {
-      const worktreeInfo = await detectWorktreeContext();
-
-      if (!worktreeInfo) {
-        log.error('Not in a git repository.');
-        process.exit(1);
-      }
-
-      if (!worktreeInfo.isWorktree) {
-        log.error("You're in the main repository, not a worktree.");
-        process.exit(1);
-      }
-
-      await recycleCurrentWorktree(worktreeInfo, branch, options, ctx);
+      const resolved = await requireWorktree(ctx);
+      await recycleCurrentWorktree(resolved, branch, options, ctx);
     });
 
   return command;
@@ -154,13 +166,10 @@ async function showWorktreeStatus(worktreeInfo: WorktreeInfo, log: Logger): Prom
 
   const git = simpleGit(worktreeInfo.worktreePath);
 
-  // Get git status
+  // Get git status. isClean() also covers conflicted and renamed entries, which
+  // an explicit list of buckets kept missing.
   const status = await git.status();
-  const hasChanges =
-    status.modified.length > 0 ||
-    status.not_added.length > 0 ||
-    status.deleted.length > 0 ||
-    status.staged.length > 0;
+  const hasChanges = !status.isClean();
 
   console.log(chalk.bold('\nCurrent Worktree:'));
   console.log('-'.repeat(50));
@@ -188,6 +197,9 @@ async function showWorktreeStatus(worktreeInfo: WorktreeInfo, log: Logger): Prom
     if (status.deleted.length > 0) {
       console.log(`  Deleted:  ${status.deleted.length} file(s)`);
     }
+    if (status.conflicted.length > 0) {
+      console.log(`  Conflicted: ${status.conflicted.length} file(s)`);
+    }
   }
 
   console.log(`\n${chalk.bold('Commands:')}`);
@@ -198,7 +210,7 @@ async function showWorktreeStatus(worktreeInfo: WorktreeInfo, log: Logger): Prom
 }
 
 async function mergeCurrentWorktree(
-  worktreeInfo: WorktreeInfo,
+  resolved: ResolvedWorktree,
   options: {
     into?: string;
     squash?: boolean;
@@ -209,11 +221,7 @@ async function mergeCurrentWorktree(
   ctx: WorktreeContext
 ): Promise<void> {
   const { log } = ctx;
-
-  if (!worktreeInfo.worktreePath || !worktreeInfo.worktreeName) {
-    log.error('Unable to determine worktree info.');
-    process.exit(1);
-  }
+  const { info: worktreeInfo, displayName } = resolved;
 
   if (worktreeInfo.branch === '(detached)') {
     log.error('Cannot merge a detached HEAD. Create a branch first.');
@@ -224,7 +232,7 @@ async function mergeCurrentWorktree(
   const manager = new WorktreeManager(worktreeInfo.mainRepoPath);
 
   // Check for uncommitted changes
-  const hasChanges = await manager.hasUncommittedChanges(worktreeInfo.worktreeName);
+  const hasChanges = await worktreeHasChanges(worktreeInfo.worktreePath);
   if (hasChanges) {
     log.error('This worktree has uncommitted changes.');
     log.info('Please commit or stash your changes before merging.');
@@ -297,14 +305,17 @@ async function mergeCurrentWorktree(
   const mergeSpinner = ora(`Merging '${worktreeInfo.branch}' into '${targetBranch}'...`).start();
 
   try {
-    await manager.merge(worktreeInfo.worktreeName, {
+    const result = await manager.merge(worktreeInfo.worktreeName, {
       targetBranch,
       squash: squash || false,
     });
     mergeSpinner.succeed(`Successfully merged '${worktreeInfo.branch}' into '${targetBranch}'`);
+    if (result.restored && result.previousBranch) {
+      log.debug(`Main worktree restored to '${result.previousBranch}'`);
+    }
   } catch (error) {
     mergeSpinner.fail(`Merge failed: ${(error as Error).message}`);
-    log.info('You may need to resolve conflicts manually.');
+    log.info('Nothing was merged or removed; the worktree and its branch are untouched.');
     process.exit(1);
   }
 
@@ -329,10 +340,7 @@ async function mergeCurrentWorktree(
     if (shouldContinue) {
       // Kill any associated tmux session
       const tmux = new TmuxManager();
-      const sessionName = tmux.getWorktreeSessionName(
-        worktreeInfo.mainRepoPath.split('/').pop() || 'project',
-        worktreeInfo.worktreeName
-      );
+      const sessionName = tmux.getWorktreeSessionName(displayName, worktreeInfo.worktreeName);
       if (await tmux.sessionExists(sessionName)) {
         log.debug(`Killing tmux session: ${sessionName}`);
         await tmux.killSession(sessionName);
@@ -368,21 +376,15 @@ async function mergeCurrentWorktree(
 }
 
 async function removeCurrentWorktree(
-  worktreeInfo: WorktreeInfo,
+  resolved: ResolvedWorktree,
   options: { force?: boolean; yes?: boolean },
   ctx: WorktreeContext
 ): Promise<void> {
   const { log } = ctx;
-
-  if (!worktreeInfo.worktreePath || !worktreeInfo.worktreeName) {
-    log.error('Unable to determine worktree info.');
-    process.exit(1);
-  }
-
-  const manager = new WorktreeManager(worktreeInfo.mainRepoPath);
+  const { info: worktreeInfo } = resolved;
 
   // Check for uncommitted changes
-  const hasChanges = await manager.hasUncommittedChanges(worktreeInfo.worktreeName);
+  const hasChanges = await worktreeHasChanges(worktreeInfo.worktreePath);
   if (hasChanges && !options.force) {
     log.warn('This worktree has uncommitted changes.');
 
@@ -437,37 +439,34 @@ async function removeCurrentWorktree(
 /**
  * Resolve the original branch a worktree was created for.
  *
- * We cannot rely on the `branch` field from `git worktree list --porcelain`
- * because that reflects the *currently checked-out* branch, which may have
- * changed (e.g., after `worktrees branch feat-x pr-branch`).
- *
- * Instead, we use the WorktreeManager which created the worktree: worktree
- * names are derived from branches via `branchToDir()` (slashes → hyphens).
- * We look up the worktree by name and get its original branch from the
- * manager's data, which cross-references the worktree path against
- * `git worktree list` and the managed worktrees directory.
+ * `git worktree list --porcelain` reports the *currently* checked-out branch,
+ * which may have moved on (e.g. after `worktrees branch feat-x pr-branch`), so
+ * the manager maps the worktree's directory name back to a local branch.
  */
 async function getWorktreeOriginalBranch(
   mainRepoPath: string,
   worktreeName: string
-): Promise<string | null> {
+): Promise<WorktreeBranchInfo | null> {
   try {
     const manager = new WorktreeManager(mainRepoPath);
-    const worktree = await manager.get(worktreeName);
-    if (worktree && worktree.branch && worktree.branch !== '(detached)') {
-      return worktree.branch;
-    }
+    return await manager.getOriginalBranch(worktreeName);
+  } catch {
+    return null;
+  }
+}
 
-    // Fallback: check all local branches for one whose branchToDir form
-    // matches the worktree name (handles external worktrees)
-    const git = simpleGit(mainRepoPath);
-    const branches = await git.branchLocal();
-    for (const branchName of branches.all) {
-      if (branchName.replace(/\//g, '-') === worktreeName) {
-        return branchName;
-      }
-    }
-
+/**
+ * Pick the remote to recycle against: `origin` when it exists, otherwise the
+ * only configured remote. Ambiguity is reported rather than guessed.
+ *
+ * Exported for testing.
+ */
+export async function resolveRemote(git: ReturnType<typeof simpleGit>): Promise<string | null> {
+  try {
+    const remotes = await git.getRemotes(false);
+    const names = remotes.map((r) => r.name);
+    if (names.includes('origin')) return 'origin';
+    if (names.length === 1) return names[0];
     return null;
   } catch {
     return null;
@@ -475,15 +474,50 @@ async function getWorktreeOriginalBranch(
 }
 
 /**
- * Detect the default remote branch (main, master, develop, dev) by checking
- * which ones exist as remote tracking branches.
+ * Detect the remote's default branch.
+ *
+ * Tries local refs first (`origin/HEAD`, then well-known names) so the command
+ * still works offline, and only falls back to `ls-remote` when the repository
+ * has no local knowledge of the remote.
  */
-async function detectDefaultRemoteBranch(
-  git: ReturnType<typeof simpleGit>
+export async function detectDefaultRemoteBranch(
+  git: ReturnType<typeof simpleGit>,
+  remote: string
 ): Promise<string | null> {
   const candidates = ['main', 'master', 'develop', 'dev'];
+
+  // Note: these probes go through gitProbe rather than try/catch. `--quiet` git
+  // commands exit non-zero *silently*, and simple-git only reports a command as
+  // failed when it writes to stderr - so catching a throw here would never fire
+  // and every repository would look like it had the first candidate.
+
+  // 1. Whatever the remote itself says its HEAD is.
+  const head = await gitProbe(git, [
+    'symbolic-ref',
+    '--quiet',
+    '--short',
+    `refs/remotes/${remote}/HEAD`,
+  ]);
+  if (head && head.startsWith(`${remote}/`)) {
+    return head.substring(remote.length + 1);
+  }
+
+  // 2. Known-good names that already exist as remote-tracking refs.
+  for (const candidate of candidates) {
+    const ref = await gitProbe(git, [
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      `refs/remotes/${remote}/${candidate}`,
+    ]);
+    if (ref) {
+      return candidate;
+    }
+  }
+
+  // 3. Last resort: ask the remote (requires network).
   try {
-    const remoteRefs = await git.raw(['ls-remote', '--heads', 'origin']);
+    const remoteRefs = await git.raw(['ls-remote', '--heads', remote]);
     // Parse each line and extract exact ref names to avoid prefix matching
     // (e.g., "refs/heads/mainline" should not match "main")
     const refNames = new Set(
@@ -505,17 +539,13 @@ async function detectDefaultRemoteBranch(
 }
 
 async function recycleCurrentWorktree(
-  worktreeInfo: WorktreeInfo,
+  resolved: ResolvedWorktree,
   targetBranch: string | undefined,
   options: { yes?: boolean },
   ctx: WorktreeContext
 ): Promise<void> {
   const { log } = ctx;
-
-  if (!worktreeInfo.worktreePath || !worktreeInfo.worktreeName) {
-    log.error('Unable to determine worktree info.');
-    process.exit(1);
-  }
+  const { info: worktreeInfo } = resolved;
 
   if (worktreeInfo.branch === '(detached)') {
     log.error('Worktree is in detached HEAD state.');
@@ -525,20 +555,28 @@ async function recycleCurrentWorktree(
 
   const git = simpleGit(worktreeInfo.worktreePath);
 
+  const remote = await resolveRemote(git);
+  if (!remote) {
+    log.error('No usable git remote found (expected `origin`, or exactly one remote).');
+    process.exit(1);
+  }
+
   // Resolve the worktree's original branch (the branch it was created for, not the current checkout)
-  const originalBranch = await getWorktreeOriginalBranch(
+  const original = await getWorktreeOriginalBranch(
     worktreeInfo.mainRepoPath,
     worktreeInfo.worktreeName
   );
 
-  if (!originalBranch) {
+  if (!original) {
     log.error('Unable to determine the branch associated with this worktree.');
     process.exit(1);
   }
 
+  const originalBranch = original.branch;
+
   // Resolve target branch: use provided value, or detect the repo's default branch
   if (!targetBranch) {
-    const detected = await detectDefaultRemoteBranch(git);
+    const detected = await detectDefaultRemoteBranch(git, remote);
     if (!detected) {
       log.error('Could not detect default remote branch (tried main, master, develop, dev).');
       log.info('Specify the branch explicitly: workon worktree recycle <branch>');
@@ -547,24 +585,15 @@ async function recycleCurrentWorktree(
     targetBranch = detected;
   }
 
-  // Check for uncommitted changes
-  const status = await git.status();
-  const hasChanges =
-    status.modified.length > 0 ||
-    status.not_added.length > 0 ||
-    status.deleted.length > 0 ||
-    status.staged.length > 0 ||
-    status.created.length > 0 ||
-    status.renamed.length > 0 ||
-    status.conflicted.length > 0;
-
-  if (hasChanges) {
+  // Check for uncommitted changes. isClean() also catches conflicted and
+  // renamed entries that an explicit bucket list misses.
+  if (await worktreeHasChanges(worktreeInfo.worktreePath)) {
     log.error('This worktree has uncommitted changes.');
     log.info('Please commit, stash, or discard your changes before recycling.');
     process.exit(1);
   }
 
-  const alreadyOnBranch = worktreeInfo.branch === originalBranch;
+  const alreadyOnBranch = original.exists && worktreeInfo.branch === originalBranch;
 
   // Confirm the operation
   if (!options.yes) {
@@ -572,11 +601,14 @@ async function recycleCurrentWorktree(
     console.log(`  Worktree:  ${chalk.cyan(worktreeInfo.worktreeName)}`);
     if (alreadyOnBranch) {
       console.log(`  Branch:    ${chalk.green(originalBranch)} (already on it)`);
+    } else if (!original.exists) {
+      console.log(`  Current:   ${chalk.yellow(worktreeInfo.branch)}`);
+      console.log(`  Recreate:  ${chalk.green(originalBranch)} (branch no longer exists)`);
     } else {
       console.log(`  Current:   ${chalk.yellow(worktreeInfo.branch)}`);
       console.log(`  Switch to: ${chalk.green(originalBranch)}`);
     }
-    console.log(`  FF from:   ${chalk.green(`origin/${targetBranch}`)}`);
+    console.log(`  FF from:   ${chalk.green(`${remote}/${targetBranch}`)}`);
     console.log();
 
     const shouldProceed = await confirm({
@@ -593,34 +625,63 @@ async function recycleCurrentWorktree(
   const spinner = ora('Fetching latest from remote...').start();
 
   try {
-    // Fetch the target branch from remote
-    await git.fetch('origin', targetBranch);
+    // Fetch the target branch. A failure here (offline, auth) is not fatal as
+    // long as we already have the remote-tracking ref locally - it just means
+    // recycling to whatever we last fetched.
+    try {
+      await git.fetch(remote, targetBranch);
+    } catch (fetchError) {
+      const hasLocalRef = await gitProbe(git, [
+        'rev-parse',
+        '--verify',
+        '--quiet',
+        `refs/remotes/${remote}/${targetBranch}`,
+      ]);
 
-    // Switch to the original branch if not already on it
-    if (!alreadyOnBranch) {
-      spinner.text = `Switching to branch '${originalBranch}'...`;
-      await git.checkout(originalBranch);
+      if (!hasLocalRef) {
+        throw fetchError;
+      }
+      spinner.warn(
+        `Could not fetch from '${remote}'; using the last known ${remote}/${targetBranch}.`
+      );
+      spinner.start();
     }
 
-    spinner.text = `Fast-forwarding '${originalBranch}' to origin/${targetBranch}...`;
+    if (!original.exists) {
+      // The worktree's branch was deleted (usually cleaned up after merging).
+      // Recreate it at the target tip so the worktree still ends up on its own
+      // branch rather than fast-forwarding whatever the last task left behind.
+      // --no-track keeps the new branch from adopting the target as its
+      // upstream, which would make a later `git push` here target that branch.
+      spinner.text = `Recreating branch '${originalBranch}' at ${remote}/${targetBranch}...`;
+      await git.checkout(['--no-track', '-b', originalBranch, `${remote}/${targetBranch}`]);
+    } else {
+      // Switch to the original branch if not already on it
+      if (!alreadyOnBranch) {
+        spinner.text = `Switching to branch '${originalBranch}'...`;
+        await git.checkout(originalBranch);
+      }
 
-    // Fast-forward to the remote branch tip
-    await git.merge([`origin/${targetBranch}`, '--ff-only']);
+      spinner.text = `Fast-forwarding '${originalBranch}' to ${remote}/${targetBranch}...`;
 
-    spinner.succeed(`Recycled! '${originalBranch}' is now at the tip of origin/${targetBranch}`);
+      // Fast-forward to the remote branch tip
+      await git.merge([`${remote}/${targetBranch}`, '--ff-only']);
+    }
+
+    spinner.succeed(`Recycled! '${originalBranch}' is now at the tip of ${remote}/${targetBranch}`);
     console.log(chalk.green('\nWorktree is ready for the next task.'));
   } catch (error) {
     const message = (error as Error).message;
     spinner.fail('Recycle failed.');
 
-    if (message.includes('ff-only')) {
+    if (message.includes('ff-only') || message.includes('Not possible to fast-forward')) {
       log.error(
-        `Cannot fast-forward '${originalBranch}' to origin/${targetBranch}. ` +
+        `Cannot fast-forward '${originalBranch}' to ${remote}/${targetBranch}. ` +
           `The branch has diverged.`
       );
       log.info('You may need to reset or rebase manually.');
-    } else if (message.includes('did not match any')) {
-      log.error(`Remote branch 'origin/${targetBranch}' not found.`);
+    } else if (message.includes('did not match any') || message.includes("couldn't find remote")) {
+      log.error(`Remote branch '${remote}/${targetBranch}' not found.`);
     } else {
       log.error(message);
     }
