@@ -85,6 +85,28 @@ export function createAddCommand(ctx: WorktreesContext): Command {
         }
       }
 
+      // A --force replace destroys the existing worktree's directory. Give the
+      // user a chance to bail before it takes uncommitted work with it.
+      if (options.force) {
+        const existing = await manager.get(manager.branchToDir(branch));
+        if (existing && !existing.isMain && (await manager.hasUncommittedChanges(existing.path))) {
+          log.warn(`Worktree '${existing.name}' has uncommitted changes at ${existing.path}.`);
+          if (options.yes) {
+            log.error('Refusing to overwrite it. Commit, stash, or remove it explicitly first.');
+            process.exit(1);
+          }
+          const shouldReplace = await confirm({
+            message: 'Replace it anyway and lose those changes?',
+            default: false,
+          });
+          if (!shouldReplace) {
+            log.info('Cancelled.');
+            return;
+          }
+          await manager.remove(existing.name, true);
+        }
+      }
+
       const spinner = ora(`Creating worktree for branch '${branch}'...`).start();
 
       try {

@@ -15,6 +15,23 @@ function wrapWithShellFallback(command: string): string {
   return `${command}; exec $SHELL`;
 }
 
+/**
+ * tmux resolves `-t <name>` by exact match, then *prefix* match, then fnmatch.
+ * That means `-t workon-app_wt_feat` happily resolves to `workon-app_wt_feat2`
+ * when the former doesn't exist - so a kill-session could take out the wrong
+ * worktree's session. Prefixing the target with `=` forces an exact match.
+ *
+ * Session targets take `=name`; window/pane targets need the window and pane
+ * suffix as well (`=name:0.0`), since bare `=name` is not a valid pane target.
+ */
+export function sessionTarget(sessionName: string): string {
+  return `=${escapeForSingleQuotes(sessionName)}`;
+}
+
+export function paneTarget(sessionName: string, pane = ''): string {
+  return `=${escapeForSingleQuotes(sessionName)}:${pane}`;
+}
+
 export class TmuxManager {
   private sessionPrefix = 'workon-';
 
@@ -30,7 +47,7 @@ export class TmuxManager {
   async sessionExists(sessionName: string): Promise<boolean> {
     try {
       // sessionName is already sanitized by getSessionName
-      await exec(`tmux has-session -t '${escapeForSingleQuotes(sessionName)}'`);
+      await exec(`tmux has-session -t '${sessionTarget(sessionName)}'`);
       return true;
     } catch {
       return false;
@@ -53,7 +70,7 @@ export class TmuxManager {
 
   async killSession(sessionName: string): Promise<boolean> {
     try {
-      await exec(`tmux kill-session -t '${escapeForSingleQuotes(sessionName)}'`);
+      await exec(`tmux kill-session -t '${sessionTarget(sessionName)}'`);
       return true;
     } catch {
       return false;
@@ -83,10 +100,10 @@ export class TmuxManager {
     );
 
     // Split window horizontally and run shell in second pane
-    await exec(`tmux split-window -h -t '${escapedSession}' -c '${escapedPath}'`);
+    await exec(`tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}'`);
 
     // Set focus on claude pane (left pane)
-    await exec(`tmux select-pane -t '${escapedSession}:0.0'`);
+    await exec(`tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`);
 
     return sessionName;
   }
@@ -116,18 +133,18 @@ export class TmuxManager {
     );
 
     // Split window vertically - creates right side (50/50 split)
-    await exec(`tmux split-window -h -t '${escapedSession}' -c '${escapedPath}'`);
+    await exec(`tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}'`);
 
     // Split the right pane horizontally - creates top-right and bottom-right (50/50 split)
     await exec(
-      `tmux split-window -v -t '${escapedSession}:0.1' -c '${escapedPath}' '${wrappedNpmCmd}'`
+      `tmux split-window -v -t '${paneTarget(sessionName, '0.1')}' -c '${escapedPath}' '${wrappedNpmCmd}'`
     );
 
     // Resize panes to ensure npm pane is visible (give it at least 10 lines)
-    await exec(`tmux resize-pane -t '${escapedSession}:0.2' -y 10`);
+    await exec(`tmux resize-pane -t '${paneTarget(sessionName, '0.2')}' -y 10`);
 
     // Set focus on claude pane (left pane)
-    await exec(`tmux select-pane -t '${escapedSession}:0.0'`);
+    await exec(`tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`);
 
     return sessionName;
   }
@@ -152,22 +169,20 @@ export class TmuxManager {
 
     // Split window vertically and run npm command in right pane
     await exec(
-      `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}' '${wrappedNpmCmd}'`
+      `tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}' '${wrappedNpmCmd}'`
     );
 
     // Set focus on terminal pane (left pane)
-    await exec(`tmux select-pane -t '${escapedSession}:0.0'`);
+    await exec(`tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`);
 
     return sessionName;
   }
 
   async attachToSession(sessionName: string): Promise<void> {
-    const escapedSession = escapeForSingleQuotes(sessionName);
-
     // Check if we're already in a tmux session
     if (process.env.TMUX) {
       // If we're already in tmux, switch to the session
-      await exec(`tmux switch-client -t '${escapedSession}'`);
+      await exec(`tmux switch-client -t '${sessionTarget(sessionName)}'`);
     } else {
       // Check if iTerm2 integration is available
       const isITerm =
@@ -178,13 +193,13 @@ export class TmuxManager {
 
       if (useiTermIntegration) {
         // Use iTerm2 tmux integration - spawn detached to avoid blocking
-        spawn('tmux', ['-CC', 'attach-session', '-t', sessionName], {
+        spawn('tmux', ['-CC', 'attach-session', '-t', `=${sessionName}`], {
           stdio: 'inherit',
           detached: true,
         });
       } else {
         // Use regular tmux - spawn detached to avoid blocking
-        spawn('tmux', ['attach-session', '-t', sessionName], {
+        spawn('tmux', ['attach-session', '-t', `=${sessionName}`], {
           stdio: 'inherit',
           detached: true,
         });
@@ -205,10 +220,10 @@ export class TmuxManager {
 
     return [
       `# Create tmux split session for ${sanitizeForShell(projectName)}`,
-      `tmux has-session -t '${escapedSession}' 2>/dev/null && tmux kill-session -t '${escapedSession}'`,
+      `tmux has-session -t '${sessionTarget(sessionName)}' 2>/dev/null && tmux kill-session -t '${sessionTarget(sessionName)}'`,
       `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${wrappedClaudeCmd}'`,
-      `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}'`,
-      `tmux select-pane -t '${escapedSession}:0.0'`,
+      `tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}'`,
+      `tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`,
       this.getAttachCommand(sessionName),
     ];
   }
@@ -228,12 +243,12 @@ export class TmuxManager {
 
     return [
       `# Create tmux three-pane session for ${sanitizeForShell(projectName)}`,
-      `tmux has-session -t '${escapedSession}' 2>/dev/null && tmux kill-session -t '${escapedSession}'`,
+      `tmux has-session -t '${sessionTarget(sessionName)}' 2>/dev/null && tmux kill-session -t '${sessionTarget(sessionName)}'`,
       `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}' '${wrappedClaudeCmd}'`,
-      `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}'`,
-      `tmux split-window -v -t '${escapedSession}:0.1' -c '${escapedPath}' '${wrappedNpmCmd}'`,
-      `tmux resize-pane -t '${escapedSession}:0.2' -y 10`,
-      `tmux select-pane -t '${escapedSession}:0.0'`,
+      `tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}'`,
+      `tmux split-window -v -t '${paneTarget(sessionName, '0.1')}' -c '${escapedPath}' '${wrappedNpmCmd}'`,
+      `tmux resize-pane -t '${paneTarget(sessionName, '0.2')}' -y 10`,
+      `tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`,
       this.getAttachCommand(sessionName),
     ];
   }
@@ -250,19 +265,17 @@ export class TmuxManager {
 
     return [
       `# Create tmux two-pane session with npm for ${sanitizeForShell(projectName)}`,
-      `tmux has-session -t '${escapedSession}' 2>/dev/null && tmux kill-session -t '${escapedSession}'`,
+      `tmux has-session -t '${sessionTarget(sessionName)}' 2>/dev/null && tmux kill-session -t '${sessionTarget(sessionName)}'`,
       `tmux new-session -d -s '${escapedSession}' -c '${escapedPath}'`,
-      `tmux split-window -h -t '${escapedSession}' -c '${escapedPath}' '${wrappedNpmCmd}'`,
-      `tmux select-pane -t '${escapedSession}:0.0'`,
+      `tmux split-window -h -t '${paneTarget(sessionName)}' -c '${escapedPath}' '${wrappedNpmCmd}'`,
+      `tmux select-pane -t '${paneTarget(sessionName, '0.0')}'`,
       this.getAttachCommand(sessionName),
     ];
   }
 
   private getAttachCommand(sessionName: string): string {
-    const escapedSession = escapeForSingleQuotes(sessionName);
-
     if (process.env.TMUX) {
-      return `tmux switch-client -t '${escapedSession}'`;
+      return `tmux switch-client -t '${sessionTarget(sessionName)}'`;
     }
 
     const isITerm =
@@ -272,9 +285,9 @@ export class TmuxManager {
     const useiTermIntegration = isITerm && !process.env.TMUX_CC_NOT_SUPPORTED;
 
     if (useiTermIntegration) {
-      return `tmux -CC attach-session -t '${escapedSession}'`;
+      return `tmux -CC attach-session -t '${sessionTarget(sessionName)}'`;
     }
-    return `tmux attach-session -t '${escapedSession}'`;
+    return `tmux attach-session -t '${sessionTarget(sessionName)}'`;
   }
 
   async listWorkonSessions(): Promise<string[]> {
@@ -284,7 +297,7 @@ export class TmuxManager {
         .trim()
         .split('\n')
         .filter((session) => session.startsWith(this.sessionPrefix))
-        .map((session) => session.replace(this.sessionPrefix, ''));
+        .map((session) => session.slice(this.sessionPrefix.length));
     } catch {
       return [];
     }

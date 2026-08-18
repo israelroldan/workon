@@ -35,15 +35,15 @@ describe('TmuxManager', () => {
 
       expect(commands).toContain('# Create tmux split session for myproject');
       expect(commands).toContain(
-        "tmux has-session -t 'workon-myproject' 2>/dev/null && tmux kill-session -t 'workon-myproject'"
+        "tmux has-session -t '=workon-myproject' 2>/dev/null && tmux kill-session -t '=workon-myproject'"
       );
       expect(commands).toContain(
         "tmux new-session -d -s 'workon-myproject' -c '/path/to/project' 'claude; exec $SHELL'"
       );
       expect(commands).toContain(
-        "tmux split-window -h -t 'workon-myproject' -c '/path/to/project'"
+        "tmux split-window -h -t '=workon-myproject:' -c '/path/to/project'"
       );
-      expect(commands).toContain("tmux select-pane -t 'workon-myproject:0.0'");
+      expect(commands).toContain("tmux select-pane -t '=workon-myproject:0.0'");
     });
 
     it('should include claude flags when provided', () => {
@@ -67,7 +67,7 @@ describe('TmuxManager', () => {
       vi.stubEnv('TMUX', '/tmp/tmux-123/default,456,0');
       const newTmux = new TmuxManager();
       const commands = newTmux.buildShellCommands('myproject', '/path/to/project');
-      expect(commands).toContain("tmux switch-client -t 'workon-myproject'");
+      expect(commands).toContain("tmux switch-client -t '=workon-myproject'");
     });
   });
 
@@ -81,9 +81,9 @@ describe('TmuxManager', () => {
 
       expect(commands).toContain('# Create tmux three-pane session for myproject');
       expect(commands).toContain(
-        "tmux split-window -v -t 'workon-myproject:0.1' -c '/path/to/project' 'npm run dev; exec $SHELL'"
+        "tmux split-window -v -t '=workon-myproject:0.1' -c '/path/to/project' 'npm run dev; exec $SHELL'"
       );
-      expect(commands).toContain("tmux resize-pane -t 'workon-myproject:0.2' -y 10");
+      expect(commands).toContain("tmux resize-pane -t '=workon-myproject:0.2' -y 10");
     });
 
     it('should use custom npm command', () => {
@@ -117,7 +117,7 @@ describe('TmuxManager', () => {
         "tmux new-session -d -s 'workon-myproject' -c '/path/to/project'"
       );
       expect(commands).toContain(
-        "tmux split-window -h -t 'workon-myproject' -c '/path/to/project' 'npm run dev; exec $SHELL'"
+        "tmux split-window -h -t '=workon-myproject:' -c '/path/to/project' 'npm run dev; exec $SHELL'"
       );
     });
 
@@ -143,7 +143,7 @@ describe('TmuxManager', () => {
 
       const newTmux = new TmuxManager();
       const commands = newTmux.buildShellCommands('myproject', '/path/to/project');
-      expect(commands).toContain("tmux -CC attach-session -t 'workon-myproject'");
+      expect(commands).toContain("tmux -CC attach-session -t '=workon-myproject'");
     });
 
     it('should use -CC flag for iTerm when LC_TERMINAL is set', () => {
@@ -152,7 +152,7 @@ describe('TmuxManager', () => {
 
       const newTmux = new TmuxManager();
       const commands = newTmux.buildShellCommands('myproject', '/path/to/project');
-      expect(commands).toContain("tmux -CC attach-session -t 'workon-myproject'");
+      expect(commands).toContain("tmux -CC attach-session -t '=workon-myproject'");
     });
 
     it('should use -CC flag for iTerm when ITERM_SESSION_ID is set', () => {
@@ -161,7 +161,7 @@ describe('TmuxManager', () => {
 
       const newTmux = new TmuxManager();
       const commands = newTmux.buildShellCommands('myproject', '/path/to/project');
-      expect(commands).toContain("tmux -CC attach-session -t 'workon-myproject'");
+      expect(commands).toContain("tmux -CC attach-session -t '=workon-myproject'");
     });
 
     it('should not use -CC flag when TMUX_CC_NOT_SUPPORTED is set', () => {
@@ -171,8 +171,8 @@ describe('TmuxManager', () => {
 
       const newTmux = new TmuxManager();
       const commands = newTmux.buildShellCommands('myproject', '/path/to/project');
-      expect(commands).not.toContain("tmux -CC attach-session -t 'workon-myproject'");
-      expect(commands).toContain("tmux attach-session -t 'workon-myproject'");
+      expect(commands).not.toContain("tmux -CC attach-session -t '=workon-myproject'");
+      expect(commands).toContain("tmux attach-session -t '=workon-myproject'");
     });
   });
 });

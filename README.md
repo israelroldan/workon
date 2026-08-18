@@ -192,8 +192,12 @@ workon worktrees list
 # Create a new worktree
 workon worktrees add feature-branch
 
-# Open workon session in a worktree (creates tmux session)
+# Open workon session in a worktree (creates tmux session, or attaches
+# to the existing one so a running session is never torn down)
 workon worktrees open feature-branch
+
+# Rebuild the session from scratch instead of attaching
+workon worktrees open feature-branch --recreate
 
 # Remove a worktree
 workon worktrees remove feature-branch
@@ -210,7 +214,7 @@ workon worktrees branch my-worktree new-branch-name --push
 When you're inside a worktree, use `workon worktree` (singular):
 
 ```bash
-cd ~/code/myproject/.worktrees/feature-branch
+cd ~/.workon/worktrees/myproject-a1b2c3d4/feature-branch
 
 # Show status of current worktree
 workon worktree
@@ -220,6 +224,8 @@ workon worktree status
 workon worktree merge
 
 # Recycle worktree for the next task (ff to latest main)
+# Always returns to the worktree's own branch first, even if the last task
+# left another branch checked out - recreating that branch if it was deleted
 workon worktree recycle
 
 # Remove this worktree (shows instructions to exit first)
@@ -231,10 +237,12 @@ If you run `workon worktrees` from inside a worktree, you'll get a helpful error
 #### Notes
 
 - If you run worktree commands from an unregistered git repository, workon will prompt you to register it first
-- Worktrees created by workon are stored in `.worktrees/` inside the project
-- External worktrees (created elsewhere) show as "(external)" in the list
+- Worktrees created by workon are stored in `~/.workon/worktrees/{project}-{hash}/`, keeping the project directory clean
+- External worktrees (created elsewhere) show as "(external)" in the list; removing one deletes its directory, so workon warns first
+- `merge` runs in the main repository: it requires a clean main worktree and puts it back on the branch it was on when it finishes
+- A merge that conflicts is rolled back - the worktree and its branch are left untouched so nothing is lost
 
-#### Post-Setup Hook
+#### Setup and Teardown Hooks
 
 Create `.workon/worktree-setup.sh` in your project to run commands after creating a worktree:
 
@@ -247,9 +255,17 @@ Create `.workon/worktree-setup.sh` in your project to run commands after creatin
 [ -f "$PROJECT_PATH/.env" ] && cp "$PROJECT_PATH/.env" .env
 ```
 
+Create `.workon/worktree-teardown.sh` to run commands before a worktree is removed
+(stop containers, free ports, archive logs).
+
 Environment variables available:
-- `WORKTREE_PATH` - Absolute path to the new worktree
+- `WORKTREE_PATH` - Absolute path to the worktree
 - `PROJECT_PATH` - Absolute path to the main project
+- `WORKTREE_NAME` - Directory name of the worktree
+
+Hooks run with the worktree as the working directory and are given 15 minutes to
+finish; set `WORKON_HOOK_TIMEOUT` (milliseconds) to change that. Skip them for a
+single command with `--no-hook`.
 
 ### Legacy Mode (Nested Shells)
 ```bash
