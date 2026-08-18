@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.9.0](https://github.com/israelroldan/workon/compare/v3.8.0...v3.9.0) (2026-08-18)
+
+
+### Features
+
+* harden worktree lifecycle and reuse existing tmux sessions ([#46](https://github.com/israelroldan/workon/issues/46)) ([7cb864f](https://github.com/israelroldan/workon/commit/7cb864f7c2ccab91e05961c1b1dad45e52c0ed43))
+
 ## [3.8.0](https://github.com/israelroldan/workon/compare/v3.7.1...v3.8.0) (2026-03-30)
 
 
